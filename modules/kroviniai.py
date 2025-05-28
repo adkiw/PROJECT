@@ -1,3 +1,5 @@
+# modules/kroviniai.py
+
 import streamlit as st
 import pandas as pd
 from datetime import date, time, timedelta
@@ -5,7 +7,7 @@ from datetime import date, time, timedelta
 def show(conn, c):
     st.title("DISPO – Krovinių valdymas")
 
-    # 1) Užtikriname, kad papildomi stulpeliai egzistuotų
+    # 1) Užtikriname, kad visi papildomi stulpeliai egzistuotų
     existing = [r[1] for r in c.execute("PRAGMA table_info(kroviniai)").fetchall()]
     extras = {
         "pakrovimo_numeris":       "TEXT",
@@ -28,7 +30,7 @@ def show(conn, c):
             c.execute(f"ALTER TABLE kroviniai ADD COLUMN {col} {typ}")
     conn.commit()
 
-    # 2) Paruošiame duomenis formoms
+    # 2) Paruošiame dropdown duomenis
     klientai = [r[0] for r in c.execute("SELECT pavadinimas FROM klientai").fetchall()]
     vilkikai_list = [r[0] for r in c.execute("SELECT numeris FROM vilkikai").fetchall()]
     busena_opt = [r[0] for r in c.execute(
@@ -37,7 +39,7 @@ def show(conn, c):
     if not busena_opt:
         busena_opt = ["suplanuotas", "nesuplanuotas", "pakrautas", "iškrautas"]
 
-    # 3) Krovinio formos įvedimai
+    # 3) Forma įvedimui
     with st.form("krovinio_forma", clear_on_submit=False):
         col1, col2 = st.columns(2)
         klientas = col1.selectbox("Klientas", [""] + klientai)
@@ -84,10 +86,11 @@ def show(conn, c):
         elif not klientas or not uzsakymo_numeris:
             st.error("❌ Privalomi laukai: Klientas ir Užsakymo numeris.")
         else:
-            # Unikalus numeris
+            # Sugeneruojame unikalų užsakymo numerio sufiksą
             base = uzsakymo_numeris
             egz = [r[0] for r in c.execute(
-                "SELECT uzsakymo_numeris FROM kroviniai WHERE uzsakymo_numeris LIKE ?", (f"{base}%",)
+                "SELECT uzsakymo_numeris FROM kroviniai WHERE uzsakymo_numeris LIKE ?",
+                (f"{base}%",)
             ).fetchall()]
             if base in egz:
                 suffix = sum(1 for x in egz if x.startswith(base))
@@ -101,7 +104,7 @@ def show(conn, c):
                 sv_val  = int(sv or 0)
                 pal_val = int(pal or 0)
             except:
-                st.error("❌ Skaičių laukeliai turi būti skaičiai.")
+                st.error("❌ Skaičių laukeliai turi būti teisingi.")
                 return
 
             c.execute("""
@@ -126,8 +129,24 @@ def show(conn, c):
             conn.commit()
             st.success("✅ Krovinys įrašytas sėkmingai.")
 
-    # 5) Krovinių sąrašas
+    # 5) Krovinių sąrašas su apskaičiavimais
     st.subheader("📋 Krovinių sąrašas")
-    # Paimame visus krovinio įrašus
-            # Užsikrauname tik pagrindinius įrašus be papildomų SELECT laukų
-        df = pd.read_sql_query("SELECT * FROM kroviniai", conn)
+    df = pd.read_sql_query("SELECT * FROM kroviniai", conn)
+    if df.empty:
+        st.info("Kol kas nėra krovinių.")
+    else:
+        # Užtikriname, kad kilometrai ir frachtas yra numeriai
+        df["kilometrai"] = pd.to_numeric(df["kilometrai"], errors="coerce")
+        df["frachtas"]    = pd.to_numeric(df["frachtas"], errors="coerce")
+        # Apskaičiuojame km kainą
+        df["km_kaina"] = (df["frachtas"] / df["kilometrai"]).round(2)
+        # Sukuriame duplicate index pagal pakrovimo numerį
+        df["dup_idx"] = df.groupby("pakrovimo_numeris").cumcount()
+        # Sukuriame display_id (id arba id-dup_idx)
+        df["display_id"] = df["id"].astype(str)
+        mask = df["dup_idx"] > 0
+        df.loc[mask, "display_id"] = df.loc[mask, "display_id"] + "-" + df.loc[mask, "dup_idx"].astype(str)
+        # Parenkame stulpelių eiliškumą
+        cols = ["display_id", "pakrovimo_numeris", "km_kaina"] + \
+               [c for c in df.columns if c not in ("id", "dup_idx", "display_id", "km_kaina")]
+        st.dataframe(df[cols], use_container_width=True)

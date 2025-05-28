@@ -12,43 +12,13 @@ def show(conn, c):
     markiu_sarasas = [r[0] for r in c.execute(
         "SELECT reiksme FROM lookup WHERE kategorija = 'Markė'"
     ).fetchall()]
+    # Vairuotojų sąrašas iš lentelės
+    vairuotoju_sarasas = [f"{r[1]} {r[2]}" for r in c.execute(
+        "SELECT id, vardas, pavarde FROM vairuotojai"
+    ).fetchall()]
 
     # —————————————
-    # Bendras priekabų priskyrimas (virš vilkikų formos)
-    # —————————————
-    st.markdown("### 🔄 Bendras priekabų priskyrimas")
-    with st.form("priekabu_priskyrimas_forma"):
-        vilkiku_sarasas = [""] + [r[0] for r in c.execute("SELECT numeris FROM vilkikai").fetchall()]
-        priek_opcijos = [""]
-        for num in priekabu_sarasas:
-            c.execute("SELECT numeris FROM vilkikai WHERE priekaba = ?", (num,))
-            assigned = [r[0] for r in c.fetchall()]
-            if assigned:
-                priek_opcijos.append(f"🔴 {num} ({', '.join(assigned)})")
-            else:
-                priek_opcijos.append(f"🟢 {num} (laisva)")
-        pasirinkta_vilk = st.selectbox("Pasirinkite vilkiką", vilkiku_sarasas)
-        pasirinkta_priek = st.selectbox("Pasirinkite priekabą", priek_opcijos)
-        vykdyti_priek = st.form_submit_button("💾 Priskirti priekabą")
-    if vykdyti_priek:
-        if not pasirinkta_vilk or not pasirinkta_priek:
-            st.warning("⚠️ Pasirinkite vilkiką ir priekabą.")
-        else:
-            priek_num = None
-            if pasirinkta_priek.startswith(("🟢","🔴")):
-                priek_num = pasirinkta_priek.split(" ")[1]
-            try:
-                c.execute(
-                    "UPDATE vilkikai SET priekaba = ? WHERE numeris = ?",
-                    (priek_num, pasirinkta_vilk)
-                )
-                conn.commit()
-                st.success(f"✅ Priekaba {priek_num or '(tuščia)'} priskirta vilkikui {pasirinkta_vilk}.")
-            except Exception as e:
-                st.error(f"❌ Klaida priskiriant: {e}")
-
-    # —————————————
-    # Naujos vilkiko registracija
+    # Naujos vilkiko registracijos forma
     # —————————————
     with st.form("vilkikai_forma", clear_on_submit=True):
         col1, col2 = st.columns(2)
@@ -59,9 +29,9 @@ def show(conn, c):
             tech_apz_date = st.date_input("Tech. apžiūros pabaiga", value=None, key="tech_data")
         with col2:
             vadyb = st.text_input("Transporto vadybininkas")
-            vair1 = st.text_input("Vairuotojas 1")
-            vair2 = st.text_input("Vairuotojas 2")
-            # Priekabos pasirinkimas formoje: rodomas statusas
+            vair1 = st.selectbox("Vairuotojas 1", [""] + vairuotoju_sarasas, key="v1")
+            vair2 = st.selectbox("Vairuotojas 2", [""] + vairuotoju_sarasas, key="v2")
+            # Priekabos pasirinkimas su būsena
             priek_ivedimo_opcijos = [""]
             for num in priekabu_sarasas:
                 c.execute("SELECT numeris FROM vilkikai WHERE priekaba = ?", (num,))
@@ -71,15 +41,15 @@ def show(conn, c):
                 else:
                     priek_ivedimo_opcijos.append(f"🟢 {num} (laisva)")
             priek = st.selectbox("Priekaba", priek_ivedimo_opcijos)
-            sub = st.form_submit_button("📅 Išsaugoti vilkiką")
+        sub = st.form_submit_button("📅 Išsaugoti vilkiką")
 
     if sub:
         if not numeris:
             st.warning("⚠️ Įveskite vilkiko numerį.")
         else:
-            vairuotojai = ", ".join(filter(None, [vair1.strip(), vair2.strip()])) or None
+            vairuotojai = ", ".join(filter(None, [vair1, vair2])) or None
             priek_num = None
-            if priek.startswith(("🟢","🔴")):
+            if priek.startswith(("🟢", "🔴")):
                 priek_num = priek.split(" ")[1]
             try:
                 c.execute(
@@ -104,11 +74,46 @@ def show(conn, c):
                 st.error(f"❌ Klaida saugant: {e}")
 
     # —————————————
-    # Esamų vilkikų sąrašas su likusiomis dienomis
+    # Bendras priekabų priskyrimas (po formos, virš sąrašo)
+    # —————————————
+    st.markdown("### 🔄 Bendras priekabų priskyrimas")
+    with st.form("priekabu_priskirstymas", clear_on_submit=True):
+        vilkiku_sarasas = [""] + [r[0] for r in c.execute("SELECT numeris FROM vilkikai").fetchall()]
+        priek_opcijos = [""]
+        for num in priekabu_sarasas:
+            c.execute("SELECT numeris FROM vilkikai WHERE priekaba = ?", (num,))
+            assigned = [r[0] for r in c.fetchall()]
+            if assigned:
+                priek_opcijos.append(f"🔴 {num} ({', '.join(assigned)})")
+            else:
+                priek_opcijos.append(f"🟢 {num} (laisva)")
+        pasirinkta_vilk = st.selectbox("Pasirinkite vilkiką", vilkiku_sarasas)
+        pasirinkta_priek = st.selectbox("Pasirinkite priekabą", priek_opcijos)
+        vykdyti_pr = st.form_submit_button("💾 Išsaugoti")
+    if vykdyti_pr:
+        if not pasirinkta_vilk:
+            st.warning("⚠️ Pasirinkite vilkiką.")
+        else:
+            priek_num = None
+            if pasirinkta_priek.startswith(("🟢", "🔴")):
+                priek_num = pasirinkta_priek.split(" ")[1]
+            try:
+                c.execute(
+                    "UPDATE vilkikai SET priekaba = ? WHERE numeris = ?",
+                    (priek_num, pasirinkta_vilk)
+                )
+                conn.commit()
+                st.success(f"✅ Priekaba {priek_num or '(tuščia)'} priskirta vilkikui {pasirinkta_vilk}.")
+            except Exception as e:
+                st.error(f"❌ Klaida priskiriant: {e}")
+
+    # —————————————
+    # Vilkikų sąrašas su likusiomis dienomis
     # —————————————
     st.subheader("📋 Vilkikų sąrašas")
     df = pd.read_sql_query(
-        "SELECT *, tech_apziura AS tech_apziuros_pabaiga FROM vilkikai ORDER BY tech_apziura ASC", conn
+        "SELECT *, tech_apziura AS tech_apziuros_pabaiga FROM vilkikai ORDER BY tech_apziura ASC",
+        conn
     )
     if df.empty:
         st.info("🔍 Kol kas nėra jokių vilkikų. Pridėkite naują aukščiau.")

@@ -141,5 +141,5 @@ def show(conn, c):
     # Apskaičiuojame likusias dienas
     df["dienu_liko"] = df["tech_apziuros_pabaiga"].apply(lambda x: (date.fromisoformat(x) - date.today()).days if x else None)
     # Rodo dokumento nuorodą – patikriname NA
-    df["dokumentas"] = df["dokumentas"].apply(lambda p: f"[📎]({p})" if pd.notna(p) else "")
-    st.write(df.to_markdown(index=False), unsafe_allow_html=True)
+        # Rodo dokumento nuorodą – tuščias, jei nėra
+    df["dokumentas"] = df["dokumentas"].fillna("").apply(lambda p: f"[📎]({p})" if p else "")

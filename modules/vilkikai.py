@@ -6,7 +6,15 @@ from datetime import date
 def show(conn, c):
     st.title("DISPO – Vilkikų valdymas")
 
-    # Sukuriame aplanką dokumentams, jei nebus
+    # —————————————
+    # Užtikriname, kad 'dokumentas' stulpelis egzistuotų
+    # —————————————
+    cols = [r[1] for r in c.execute("PRAGMA table_info(vilkikai)").fetchall()]
+    if 'dokumentas' not in cols:
+        c.execute("ALTER TABLE vilkikai ADD COLUMN dokumentas TEXT")
+        conn.commit()
+
+    # Sukuriame aplanką dokumentams
     upload_dir = "uploads/vilkikai"
     os.makedirs(upload_dir, exist_ok=True)
 
@@ -29,16 +37,8 @@ def show(conn, c):
         with col1:
             numeris = st.text_input("Vilkiko numeris")
             marke = st.selectbox("Markė", [""] + markiu_sarasas)
-            pirm_reg_data = st.date_input(
-                "Pirmos registracijos data",
-                value=None,
-                key="pr_reg_data"
-            )
-            tech_apz_date = st.date_input(
-                "Tech. apžiūros pabaiga",
-                value=None,
-                key="tech_data"
-            )
+            pirm_reg_data = st.date_input("Pirmos registracijos data", value=None, key="pr_reg_data")
+            tech_apz_date = st.date_input("Tech. apžiūros pabaiga", value=None, key="tech_data")
         with col2:
             vadyb = st.text_input("Transporto vadybininkas")
             vair1 = st.selectbox("Vairuotojas 1", [""] + vairuotoju_sarasas, key="v1")
@@ -59,8 +59,11 @@ def show(conn, c):
         if not numeris:
             st.warning("⚠️ Įveskite vilkiko numerį.")
         else:
-            # Sujungiame vairuotojus
             vairuotojai = ", ".join(filter(None, [vair1, vair2])) or None
+            priek_num = None
+            if priek.startswith(("🟢", "🔴")):
+                priek_num = priek.split(" ")[1]
+
             # Išsaugome dokumentą
             dok_path = None
             if dokumentas:
@@ -68,35 +71,30 @@ def show(conn, c):
                 dok_path = os.path.join(upload_dir, fname)
                 with open(dok_path, "wb") as f:
                     f.write(dokumentas.getbuffer())
-            # Išskiriame priekabos numerį
-            priek_num = None
-            if priek.startswith(("🟢", "🔴")):
-                priek_num = priek.split(" ")[1]
+
             try:
-                # Pridedame stulpelį 'dokumentas' DB lentelei rankiniu būdu jei reikalinga
-                c.execute("ALTER TABLE vilkikai ADD COLUMN dokumentas TEXT")
-            except:
-                pass
-            # Įrašome naują vilkiką
-            c.execute(
-                "INSERT INTO vilkikai (numeris, marke, pagaminimo_metai, tech_apziura, vadybininkas, vairuotojai, priekaba, dokumentas)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    numeris,
-                    marke or None,
-                    pirm_reg_data.isoformat() if pirm_reg_data else None,
-                    tech_apz_date.isoformat() if tech_apz_date else None,
-                    vadyb or None,
-                    vairuotojai,
-                    priek_num,
-                    dok_path
+                # Įrašome naują vilkiką su dokumento keliu
+                c.execute(
+                    "INSERT INTO vilkikai (numeris, marke, pagaminimo_metai, tech_apziura, vadybininkas, vairuotojai, priekaba, dokumentas)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        numeris,
+                        marke or None,
+                        pirm_reg_data.isoformat() if pirm_reg_data else None,
+                        tech_apz_date.isoformat() if tech_apz_date else None,
+                        vadyb or None,
+                        vairuotojai,
+                        priek_num,
+                        dok_path
+                    )
                 )
-            )
-            conn.commit()
-            st.success("✅ Vilkikas išsaugotas sėkmingai.")
-            if tech_apz_date:
-                days_left = (tech_apz_date - date.today()).days
-                st.info(f"🔧 Dienų iki techninės apžiūros liko: {days_left}")
+                conn.commit()
+                st.success("✅ Vilkikas išsaugotas sėkmingai.")
+                if tech_apz_date:
+                    days_left = (tech_apz_date - date.today()).days
+                    st.info(f"🔧 Dienų iki techninės apžiūros liko: {days_left}")
+            except Exception as e:
+                st.error(f"❌ Klaida saugant: {e}")
 
     # —————————————
     # Bendras priekabų priskirstymas
@@ -140,13 +138,7 @@ def show(conn, c):
     if df.empty:
         st.info("🔍 Kol kas nėra jokių vilkikų. Pridėkite naują aukščiau.")
         return
-    def calc_days(x):
-        try:
-            d = date.fromisoformat(x)
-            return (d - date.today()).days
-        except:
-            return None
-    df["dienu_liko"] = df["tech_apziuros_pabaiga"].apply(calc_days)
+    df["dienu_liko"] = df["tech_apziuros_pabaiga"].apply(lambda x: (date.fromisoformat(x) - date.today()).days if x else None)
     # Rodo nuorodas į dokumentus
     df["dokumentas"] = df["dokumentas"].apply(lambda p: f"[📎]({p})" if p else "")
     st.write(df.to_markdown(index=False), unsafe_allow_html=True)

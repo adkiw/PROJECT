@@ -129,21 +129,5 @@ def show(conn, c):
     # 5) Krovinių sąrašas
     st.subheader("📋 Krovinių sąrašas")
     # Paimame visus krovinio įrašus
-    df = pd.read_sql_query("SELECT * FROM kroviniai", conn)
-    if df.empty:
-        st.info("Kol kas nėra krovinių.")
-    else:
-        # Konvertuojame į numerinius tipus, kad nebūtų klaidų
-        df['kilometrai'] = pd.to_numeric(df['kilometrai'], errors='coerce')
-        df['frachtas']    = pd.to_numeric(df['frachtas'], errors='coerce')
-        # Apskaičiuojame km kainą, be apply
-        df['km_kaina'] = (df['frachtas'] / df['kilometrai']).round(2)
-        # Sukuriame kopijų indekso numerį pagal pakrovimo numerį
-        df['dup_idx'] = df.groupby('pakrovimo_numeris').cumcount()
-        # Sukuriame rodymo ID: id arba id-dup_idx
-        df['display_id'] = df['id'].astype(str)
-        mask = df['dup_idx'] > 0
-        df.loc[mask, 'display_id'] = df.loc[mask, 'display_id'] + '-' + df.loc[mask, 'dup_idx'].astype(str)
-        # Rinkinamės stulpelius rodymui
-        cols = ['display_id', 'pakrovimo_numeris', 'km_kaina'] + [c for c in df.columns if c not in ('id','dup_idx','display_id','km_kaina')]
-        st.dataframe(df[cols], use_container_width=True)
+            # Užsikrauname tik pagrindinius įrašus be papildomų SELECT laukų
+        df = pd.read_sql_query("SELECT * FROM kroviniai", conn)

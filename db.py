@@ -4,6 +4,7 @@ def init_db():
     conn = sqlite3.connect("dispo_new.db", check_same_thread=False)
     c = conn.cursor()
 
+    # Universali lookup lentelė
     c.execute("""
         CREATE TABLE IF NOT EXISTS lookup (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -12,6 +13,7 @@ def init_db():
         )
     """)
 
+    # Klientai
     c.execute("""
         CREATE TABLE IF NOT EXISTS klientai (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -24,6 +26,7 @@ def init_db():
         )
     """)
 
+    # Kroviniai
     c.execute("""
         CREATE TABLE IF NOT EXISTS kroviniai (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -34,6 +37,88 @@ def init_db():
             kilometrai INTEGER,
             frachtas REAL,
             busena TEXT
+        )
+    """)
+
+    # Vilkikai
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS vilkikai (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            numeris TEXT UNIQUE,
+            marke TEXT,
+            pagaminimo_metai INTEGER,
+            tech_apziura DATE,
+            vadybininkas TEXT,
+            vairuotojai TEXT,
+            priekaba TEXT
+        )
+    """)
+
+    # Priekabos
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS priekabos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            priekabu_tipas TEXT,
+            numeris TEXT UNIQUE,
+            marke TEXT,
+            pagaminimo_metai INTEGER,
+            tech_apziura DATE,
+            priskirtas_vilkikas TEXT
+        )
+    """)
+
+    # Grupės
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS grupes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            numeris TEXT UNIQUE,
+            pavadinimas TEXT,
+            aprasymas TEXT
+        )
+    """)
+
+    # Vairuotojai
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS vairuotojai (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            vardas TEXT,
+            pavarde TEXT,
+            gimimo_metai INTEGER,
+            tautybe TEXT,
+            priskirtas_vilkikas TEXT
+        )
+    """)
+
+    # Darbuotojai
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS darbuotojai (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            vardas TEXT,
+            pavarde TEXT,
+            pareigybe TEXT,
+            el_pastas TEXT,
+            telefonas TEXT,
+            grupe TEXT
+        )
+    """)
+
+    # DISPO – Planavimo lentelė
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS dispo (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            data TEXT,
+            vilkikas TEXT,
+            priekaba TEXT,
+            ekspeditorius TEXT,
+            vadybininkas TEXT,
+            vieta TEXT,
+            atvykimo_laikas TEXT,
+            laikas_nuo TEXT,
+            laikas_iki TEXT,
+            tušti_km INTEGER,
+            krauti_km INTEGER,
+            frachtas REAL,
+            pastabos TEXT
         )
     """)
 

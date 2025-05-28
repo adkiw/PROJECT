@@ -6,13 +6,13 @@ st.set_page_config(layout="wide")
 conn, c = init_db()
 
 # Moduliai
-moduliai = ["DISPO", "Kroviniai", "Vilkikai", "Priekabos", "Grupės", "Vairuotojai", "Klientai", "Darbuotojai", "Nustatymai"]
+moduliai = ["dispo", "Kroviniai", "Vilkikai", "Priekabos", "Grupės", "Vairuotojai", "Klientai", "Darbuotojai", "Nustatymai"]
 modulis = st.sidebar.radio("📂 Pasirink modulį", moduliai)
 
 # Kiekvieno modulio kvietimas
-if modulis == "DISPO":
-    st.title("DISPO – Planavimo lentelė")
-    st.markdown("DISPO modulis dar pildomas.")
+if modulis == "dispo":
+    st.title("dispo – Planavimo lentelė")
+    st.markdown("dispo modulis dar pildomas.")
 elif modulis == "Kroviniai":
     kroviniai.show(conn, c)
 elif modulis == "Vilkikai":

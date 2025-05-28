@@ -1,9 +1,14 @@
 import streamlit as st
 import pandas as pd
+import os
 from datetime import date
 
 def show(conn, c):
     st.title("DISPO – Vilkikų valdymas")
+
+    # Sukuriame aplanką dokumentams, jei nebus
+    upload_dir = "uploads/vilkikai"
+    os.makedirs(upload_dir, exist_ok=True)
 
     # —————————————
     # Paruošiame duomenis
@@ -47,40 +52,54 @@ def show(conn, c):
                 else:
                     priek_ivedimo_opcijos.append(f"🟢 {num} (laisva)")
             priek = st.selectbox("Priekaba", priek_ivedimo_opcijos)
+            dokumentas = st.file_uploader("Pridėti dokumentą", type=["pdf", "jpg", "png", "docx"], key="dok")
         sub = st.form_submit_button("📅 Išsaugoti vilkiką")
 
     if sub:
         if not numeris:
             st.warning("⚠️ Įveskite vilkiko numerį.")
         else:
+            # Sujungiame vairuotojus
             vairuotojai = ", ".join(filter(None, [vair1, vair2])) or None
+            # Išsaugome dokumentą
+            dok_path = None
+            if dokumentas:
+                fname = f"{numeris}_{dokumentas.name}"
+                dok_path = os.path.join(upload_dir, fname)
+                with open(dok_path, "wb") as f:
+                    f.write(dokumentas.getbuffer())
+            # Išskiriame priekabos numerį
             priek_num = None
             if priek.startswith(("🟢", "🔴")):
                 priek_num = priek.split(" ")[1]
             try:
-                c.execute(
-                    "INSERT INTO vilkikai (numeris, marke, pagaminimo_metai, tech_apziura, vadybininkas, vairuotojai, priekaba)"
-                    " VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        numeris,
-                        marke or None,
-                        pirm_reg_data.isoformat() if pirm_reg_data else None,
-                        tech_apz_date.isoformat() if tech_apz_date else None,
-                        vadyb or None,
-                        vairuotojai,
-                        priek_num
-                    )
+                # Pridedame stulpelį 'dokumentas' DB lentelei rankiniu būdu jei reikalinga
+                c.execute("ALTER TABLE vilkikai ADD COLUMN dokumentas TEXT")
+            except:
+                pass
+            # Įrašome naują vilkiką
+            c.execute(
+                "INSERT INTO vilkikai (numeris, marke, pagaminimo_metai, tech_apziura, vadybininkas, vairuotojai, priekaba, dokumentas)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    numeris,
+                    marke or None,
+                    pirm_reg_data.isoformat() if pirm_reg_data else None,
+                    tech_apz_date.isoformat() if tech_apz_date else None,
+                    vadyb or None,
+                    vairuotojai,
+                    priek_num,
+                    dok_path
                 )
-                conn.commit()
-                st.success("✅ Vilkikas išsaugotas sėkmingai.")
-                if tech_apz_date:
-                    days_left = (tech_apz_date - date.today()).days
-                    st.info(f"🔧 Dienų iki techninės apžiūros liko: {days_left}")
-            except Exception as e:
-                st.error(f"❌ Klaida saugant: {e}")
+            )
+            conn.commit()
+            st.success("✅ Vilkikas išsaugotas sėkmingai.")
+            if tech_apz_date:
+                days_left = (tech_apz_date - date.today()).days
+                st.info(f"🔧 Dienų iki techninės apžiūros liko: {days_left}")
 
     # —————————————
-    # Bendras priekabų priskyrimas
+    # Bendras priekabų priskirstymas
     # —————————————
     st.markdown("### 🔄 Bendras priekabų priskirstymas")
     with st.form("priekabu_priskirstymas", clear_on_submit=True):
@@ -103,22 +122,19 @@ def show(conn, c):
             priek_num = None
             if pasirinkta_priek.startswith(("🟢", "🔴")):
                 priek_num = pasirinkta_priek.split(" ")[1]
-            try:
-                c.execute(
-                    "UPDATE vilkikai SET priekaba = ? WHERE numeris = ?",
-                    (priek_num, pasirinkta_vilk)
-                )
-                conn.commit()
-                st.success(f"✅ Priekaba {priek_num or '(tuščia)'} priskirta vilkikui {pasirinkta_vilk}.")
-            except Exception as e:
-                st.error(f"❌ Klaida priskiriant: {e}")
+            c.execute(
+                "UPDATE vilkikai SET priekaba = ? WHERE numeris = ?",
+                (priek_num, pasirinkta_vilk)
+            )
+            conn.commit()
+            st.success(f"✅ Priekaba {priek_num or '(tuščia)'} priskirta vilkikui {pasirinkta_vilk}.")
 
     # —————————————
-    # Vilkikų sąrašas su likusiomis dienomis
+    # Vilkikų sąrašas su likusiomis dienomis ir dokumentais
     # —————————————
     st.subheader("📋 Vilkikų sąrašas")
     df = pd.read_sql_query(
-        "SELECT *, tech_apziura AS tech_apziuros_pabaiga, pagaminimo_metai AS pirmos_registracijos_data FROM vilkikai ORDER BY tech_apziura ASC",
+        "SELECT *, tech_apziura AS tech_apziuros_pabaiga, pagaminimo_metai AS pirmos_registracijos_data, dokumentas FROM vilkikai ORDER BY tech_apziura ASC",
         conn
     )
     if df.empty:
@@ -131,4 +147,6 @@ def show(conn, c):
         except:
             return None
     df["dienu_liko"] = df["tech_apziuros_pabaiga"].apply(calc_days)
-    st.dataframe(df, use_container_width=True)
+    # Rodo nuorodas į dokumentus
+    df["dokumentas"] = df["dokumentas"].apply(lambda p: f"[📎]({p})" if p else "")
+    st.write(df.to_markdown(index=False), unsafe_allow_html=True)

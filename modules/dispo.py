@@ -1,11 +1,12 @@
+# modules/dispo.py
+
 import streamlit as st
 from datetime import date, timedelta
 import random
 import hashlib
 
 def show(conn, c):
-
-    st.title("DISPO – Planavimo lentelė su raidėmis, datų intervalu ir deterministiniu random")
+    st.title("DISPO – Planavimo lentelė su grupėmis")
 
     lt_weekdays = {
         0: "Pirmadienis", 1: "Antradienis", 2: "Trečiadienis",
@@ -55,13 +56,22 @@ def show(conn, c):
         "Kelių išlaidos", "Frachtas"
     ]
 
-    trucks_info = [
-        ("1", "2", "ABC123", "Tomas Mickus", "Laura", "PRK001", 2, 24),
-        ("1", "3", "XYZ789", "Greta Kairytė", "Jonas", "PRK009", 1, 45),
-        ("2", "1", "DEF456", "Rasa Mikalausk.", "Tomas", "PRK123", 2, 24),
-        ("3", "4", "GHI321", "Laura Juknevič.", "Greta", "PRK555", 1, 45),
-        ("2", "5", "JKL654", "Jonas Petrauskas", "Rasa", "PRK321", 2, 24),
-    ]
+    trucks_info = c.execute("""
+        SELECT
+            tg.numeris AS trans_grupe,
+            eg.numeris AS eksp_grupe,
+            v.numeris,
+            e.vardas || ' ' || e.pavarde AS ekspeditorius,
+            t.vardas || ' ' || t.pavarde AS vadybininkas,
+            v.priekaba,
+            (SELECT COUNT(*) FROM vairuotojai WHERE priskirtas_vilkikas = v.numeris) AS vair_sk,
+            42 AS savaitine_atstova
+        FROM vilkikai v
+        LEFT JOIN darbuotojai t ON v.vadybininkas = t.vardas
+        LEFT JOIN grupes tg ON t.grupe = tg.pavadinimas
+        LEFT JOIN darbuotojai e ON v.vairuotojai LIKE '%' || e.vardas || '%'
+        LEFT JOIN grupes eg ON e.grupe = eg.pavadinimas
+    """).fetchall()
 
     all_eksp = sorted({t[3] for t in trucks_info})
     sel_eksp = st.multiselect("Filtruok pagal ekspeditorius", options=all_eksp, default=all_eksp)
@@ -97,64 +107,50 @@ def show(conn, c):
     total_all_cols = 1 + total_common + total_day_cols
 
     html = '<div class="table-container"><table>\n'
-
-    html += "<tr>"
-    for i in range(1, total_all_cols + 1):
-        html += f"<th>{col_letter(i)}</th>"
-    html += "</tr>\n"
-
-    html += "<tr><th></th>" + f'<th colspan="{total_common}"></th>'
+    html += "<tr>" + "".join(f"<th>{col_letter(i)}</th>" for i in range(1, total_all_cols + 1)) + "</tr>\n"
+    html += "<tr><th></th><th colspan=\"{}\"></th>".format(total_common)
     for d in dates:
         wd = lt_weekdays[d.weekday()]
         html += f'<th colspan="{len(day_headers)}">{d:%Y-%m-%d} {wd}</th>'
     html += "</tr>\n"
 
-    html += "<tr><th>#</th>"
-    for h in common_headers:
-        html += f"<th>{h}</th>"
+    html += "<tr><th>#</th>" + "".join(f"<th>{h}</th>" for h in common_headers)
     for _ in dates:
         for hh in day_headers:
             html += f"<th>{hh}</th>"
     html += "</tr>\n"
 
     row_num = 1
-    for tr_grp, exp_grp, truck, eksp, tvad, prk, v_sk, atst in trucks_info:
-        if eksp not in sel_eksp:
+    for row in trucks_info:
+        if row[3] not in sel_eksp:
             continue
-
         html += f"<tr><td>{row_num}</td>"
-        for val in (tr_grp, exp_grp, truck, eksp, tvad, prk, v_sk, atst):
+        for val in row:
             html += f'<td rowspan="2">{val}</td>'
         html += "<td></td>"
         for d in dates:
             key = d.strftime("%Y-%m-%d")
-            rnd = get_rnd(truck, key)
+            rnd = get_rnd(row[2], key)
             atv = f"{rnd.randint(0, 23):02d}:{rnd.randint(0, 59):02d}"
             city = rnd.choice(["Vilnius", "Kaunas", "Berlin"])
-            html += (
-                "<td></td><td></td>"
-                f"<td>{atv}</td><td></td><td></td>"
-                f"<td>{city}</td>" + "<td></td>" * 5
-            )
+            html += ("<td></td><td></td>"
+                     f"<td>{atv}</td><td></td><td></td>"
+                     f"<td>{city}</td>" + "<td></td>" * 5)
         html += "</tr>\n"
 
         html += f"<tr><td>{row_num + 1}</td>" + "<td></td>" * total_common
         for d in dates:
             key = d.strftime("%Y-%m-%d")
-            rnd = get_rnd(truck, key)
+            rnd = get_rnd(row[2], key)
             t1 = f"{rnd.randint(7, 9):02d}:00"
             kms = rnd.randint(20, 120)
             costs = kms * 5
             fr = round(rnd.uniform(800, 1200), 2)
             dest = rnd.choice(["Riga", "Poznan"])
-            html += (
-                "<td>9</td><td>6</td>"
-                f"<td>{t1}</td><td>{t1}</td><td>16:00</td>"
-                f"<td>{dest}</td><td></td>"
-                f"<td>{kms}</td><td>{costs}</td>"
-                "<td></td>"
-                f"<td>{fr}</td>"
-            )
+            html += ("<td>9</td><td>6</td>"
+                     f"<td>{t1}</td><td>{t1}</td><td>16:00</td>"
+                     f"<td>{dest}</td><td></td>"
+                     f"<td>{kms}</td><td>{costs}</td><td></td><td>{fr}</td>")
         html += "</tr>\n"
         row_num += 2
 

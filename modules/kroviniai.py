@@ -5,7 +5,7 @@ from datetime import date, time, timedelta
 def show(conn, c):
     st.title("DISPO – Krovinių valdymas")
 
-    # 1) Užtikriname, kad papildomi stulpeliai egzistuotų (ALTER TABLE)
+    # 1) Užtikriname, kad papildomi stulpeliai egzistuotų
     existing = [r[1] for r in c.execute("PRAGMA table_info(kroviniai)").fetchall()]
     extras = {
         "pakrovimo_numeris":       "TEXT",
@@ -31,11 +31,13 @@ def show(conn, c):
     # 2) Paruošiame duomenis formoms
     klientai = [r[0] for r in c.execute("SELECT pavadinimas FROM klientai").fetchall()]
     vilkikai_list = [r[0] for r in c.execute("SELECT numeris FROM vilkikai").fetchall()]
-    busena_opt = [r[0] for r in c.execute("SELECT reiksme FROM lookup WHERE kategorija = ?", ("busena",)).fetchall()]
+    busena_opt = [r[0] for r in c.execute(
+        "SELECT reiksme FROM lookup WHERE kategorija = ?", ("busena",)
+    ).fetchall()]
     if not busena_opt:
         busena_opt = ["suplanuotas", "nesuplanuotas", "pakrautas", "iškrautas"]
 
-    # 3) Krovinio formos įvesčių skyrius
+    # 3) Krovinio formos įvedimai
     with st.form("krovinio_forma", clear_on_submit=False):
         col1, col2 = st.columns(2)
         klientas = col1.selectbox("Klientas", [""] + klientai)
@@ -60,15 +62,17 @@ def show(conn, c):
         vilkikas = col7.selectbox("Vilkikas", [""] + vilkikai_list, key="vilkikas")
         priekaba = ""
         if vilkikas:
-            row = c.execute("SELECT priekaba FROM vilkikai WHERE numeris = ?", (vilkikas,)).fetchone()
+            row = c.execute(
+                "SELECT priekaba FROM vilkikai WHERE numeris = ?", (vilkikas,)
+            ).fetchone()
             priekaba = row[0] if row and row[0] else ""
         col8.text_input("Priekaba", value=priekaba, disabled=True, key="priekaba")
 
         col9, col10, col11, col12 = st.columns(4)
-        km    = col9.text_input("Kilometrai")
-        fr    = col10.text_input("Frachtas (€)")
-        sv    = col11.text_input("Svoris (kg)")
-        pal   = col12.text_input("Padėklų skaičius")
+        km   = col9.text_input("Kilometrai")
+        fr   = col10.text_input("Frachtas (€)")
+        sv   = col11.text_input("Svoris (kg)")
+        pal  = col12.text_input("Padėklų skaičius")
 
         busena = st.selectbox("Būsena", busena_opt)
         submit = st.form_submit_button("📅 Įrašyti krovinį")
@@ -97,7 +101,7 @@ def show(conn, c):
                 sv_val  = int(sv or 0)
                 pal_val = int(pal or 0)
             except:
-                st.error("❌ Skaičių laukeliai turi būti teisingi.")
+                st.error("❌ Skaičių laukeliai turi būti skaičiai.")
                 return
 
             c.execute("""
@@ -122,18 +126,27 @@ def show(conn, c):
             conn.commit()
             st.success("✅ Krovinys įrašytas sėkmingai.")
 
-    # 5) Krovinių sąrašas su km_kaina ir display_id
+    # 5) Krovinių sąrašas su rinktinėmis metrikomis
     st.subheader("📋 Krovinių sąrašas")
-    df = pd.read_sql_query("SELECT id, pakrovimo_numeris, kilometrai, frachtas, * FROM kroviniai", conn)
+    df = pd.read_sql_query("SELECT * FROM kroviniai", conn)
     if df.empty:
         st.info("Kol kas nėra krovinių.")
     else:
-        # km kaina
-        df['km_kaina'] = df.apply(lambda r: round(r['frachtas']/r['kilometrai'],2) if r['kilometrai'] else None, axis=1)
-        # duplicate index per pakrovimo_numeris
+        # Konvertuojame į numerius
+        df['kilometrai'] = pd.to_numeric(df['kilometrai'], errors='coerce')
+        df['frachtas'] = pd.to_numeric(df['frachtas'], errors='coerce')
+        # Apskaičiuojame km kainą
+        df['km_kaina'] = df['frachtas'] / df['kilometrai']
+        df['km_kaina'] = df['km_kaina'].round(2)
+        # Duplicate index pagal pakrovimo numerį
         df['dup_idx'] = df.groupby('pakrovimo_numeris').cumcount()
-        # display_id
-        df['display_id'] = df.apply(lambda r: str(r['id']) if r['dup_idx']==0 else f"{r['id']}-{r['dup_idx']}", axis=1)
-        # reorder columns
-        cols = ['display_id','pakrovimo_numeris','km_kaina'] + [c for c in df.columns if c not in ('id','dup_idx','display_id','km_kaina')]
+        # Display ID su sufiksais
+        df['display_id'] = df.apply(
+            lambda r: str(r['id']) if r['dup_idx'] == 0 else f"{r['id']}-{r['dup_idx']}",
+            axis=1
+        )
+        # Pateikiame pasirinktus stulpelius
+        cols = ['display_id', 'pakrovimo_numeris', 'km_kaina'] + [
+            c for c in df.columns if c not in ('id','dup_idx','display_id','km_kaina')
+        ]
         st.dataframe(df[cols], use_container_width=True)

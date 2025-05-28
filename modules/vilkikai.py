@@ -40,23 +40,28 @@ def show(conn, c):
     df = pd.read_sql_query("SELECT * FROM vilkikai", conn)
 
     if not df.empty:
-        updated_rows = []
-        for i, row in df.iterrows():
-            selected_priekaba = st.selectbox(
-                f"🚛 Priekaba vilkikui {row['numeris']}",
-                priekabu_pasirinkimai,
-                index=priekabu_pasirinkimai.index(row['priekaba']) if row['priekaba'] in priekabu_pasirinkimai else 0,
-                key=f"inline_priekaba_{i}"
-            )
-            if selected_priekaba != row['priekaba']:
-                updated_rows.append((selected_priekaba, row['numeris']))
+        df_display = df.copy()
+        new_priekabos = {}
 
-        if updated_rows:
-            if st.button("🔄 Išsaugoti visus priekabų pakeitimus"):
-                for priek_val, num_val in updated_rows:
-                    c.execute("UPDATE vilkikai SET priekaba = ? WHERE numeris = ?", (priek_val, num_val))
-                conn.commit()
-                st.success("✅ Priekabos atnaujintos visiems pakeistiems vilkikams.")
+        for i, row in df.iterrows():
+            col1, col2 = st.columns([5, 2])
+            with col1:
+                st.markdown(f"**{row['numeris']}** | {row['marke']} ({row['pagaminimo_metai']})")
+                st.write(f"**Tech apžiūra:** {row['tech_apziura']} | **Vadybininkas:** {row['vadybininkas']} | **Vairuotojai:** {row['vairuotojai']}")
+            with col2:
+                selected = st.selectbox(
+                    f"Pasirink priekabą",
+                    [""] + priekabu_sarasas,
+                    index=priekabu_sarasas.index(row['priekaba']) + 1 if row['priekaba'] in priekabu_sarasas else 0,
+                    key=f"inline_update_{i}"
+                )
+                new_priekabos[row['numeris']] = selected
+
+        if st.button("🔄 Išsaugoti visus pakeitimus apačioje"):
+            for numeris, new_priek in new_priekabos.items():
+                c.execute("UPDATE vilkikai SET priekaba = ? WHERE numeris = ?", (new_priek, numeris))
+            conn.commit()
+            st.success("✅ Priekabos atnaujintos visiems vilkikams.")
 
         st.dataframe(df, use_container_width=True)
     else:

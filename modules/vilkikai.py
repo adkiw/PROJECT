@@ -42,30 +42,29 @@ def show(conn, c):
     if not df.empty:
         new_priekabos = {}
 
-        header_cols = st.columns(len(df.columns) + 1)
-        for j, col_name in enumerate(df.columns):
-            header_cols[j].markdown(f"**{col_name}**")
-        header_cols[-1].markdown("**Keisti priekabą**")
+        # Rodyti lentelę su antraštėmis
+        header = list(df.columns) + ["Nauja priekaba"]
+        table_data = []
 
         for i, row in df.iterrows():
-            row_cols = st.columns(len(row) + 1)
-            for j, val in enumerate(row):
-                row_cols[j].markdown(str(val))
+            selectbox_key = f"priekaba_select_{i}"
+            default_index = priekabu_sarasas.index(row['priekaba']) if row['priekaba'] in priekabu_sarasas else 0
+            selected = st.selectbox("", priekabu_sarasas, index=default_index, key=selectbox_key)
 
-            selected = row_cols[-1].selectbox(
-                "",
-                [""] + priekabu_sarasas,
-                index=priekabu_sarasas.index(row['priekaba']) + 1 if row['priekaba'] in priekabu_sarasas else 0,
-                key=f"priekaba_select_{i}"
-            )
             if selected != row['priekaba']:
                 new_priekabos[row['numeris']] = selected
+
+            row_data = list(row.values) + [selected]
+            table_data.append(row_data)
+
+        # Graži lentelė su DataFrame
+        df_display = pd.DataFrame(table_data, columns=header)
+        st.dataframe(df_display, use_container_width=True)
 
         if new_priekabos and st.button("🔄 Išsaugoti pakeitimus stulpelyje"):
             for numeris, nauja_priek in new_priekabos.items():
                 c.execute("UPDATE vilkikai SET priekaba = ? WHERE numeris = ?", (nauja_priek, numeris))
             conn.commit()
             st.success("✅ Priekabos pakeistos pagal pasirinktus stulpelius.")
-
     else:
         st.info("🔍 Kol kas nėra jokių vilkikų. Pridėkite naują aukščiau.")

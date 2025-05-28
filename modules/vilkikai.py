@@ -1,101 +1,79 @@
 import streamlit as st
 import pandas as pd
-import sqlite3
 from datetime import date
 
-# ----------------------------------
-# Duomenų bazės prijungimas
-# ----------------------------------
-@st.cache(allow_output_mutation=True)
-def get_connection(db_path='dispo.db'):
-    conn = sqlite3.connect(db_path, check_same_thread=False)
-    return conn
-
-conn = get_connection()
-c = conn.cursor()
-
-# ----------------------------------
-# Pagrindinė programa
-# ----------------------------------
-def main():
+def show(conn, c):
     st.title("DISPO – Vilkikų valdymas")
 
-    # ─── Naujo vilkiko įvedimo forma ──────────────────
-    with st.form("new_truck", clear_on_submit=True):
-        num     = st.text_input("Vilkiko numeris")
-        marke   = st.text_input("Markė")
-        metai   = st.text_input("Pagaminimo metai")
-        tech    = st.date_input("Tech. apžiūra", value=date.today())
-        vadyb   = st.text_input("Transporto vadybininkas")
-        vair    = st.text_input("Vairuotojai (atskirti kableliais)")
-        priekabu = [r[0] for r in c.execute("SELECT numeris FROM priekabos").fetchall()]
-        priek    = st.selectbox("Priekaba", [""] + priekabu)
-        save_btn = st.form_submit_button("📅 Išsaugoti vilkiką")
+    # fetch available trailers
+    priekabu_sarasas = [r[0] for r in c.execute("SELECT numeris FROM priekabos").fetchall()]
 
-    if save_btn:
-        if not num.strip():
-            st.warning("⚠️ Įveskite vilkiko numerį.")
+    # —————————————
+    # NEW TRUCK FORM
+    # —————————————
+    with st.form("vilkikai_forma", clear_on_submit=True):
+        numeris     = st.text_input("Vilkiko numeris")
+        marke       = st.text_input("Markė")
+        pag_metai   = st.text_input("Pagaminimo metai")
+        tech_apz    = st.date_input("Tech. apžiūra", value=date.today())
+        vadyb       = st.text_input("Transporto vadybininkas")
+        vair        = st.text_input("Vairuotojai (atskirti kableliais)")
+        priekabu_pasirinkimai = [""] + priekabu_sarasas
+        priek       = st.selectbox("Priekaba", priekabu_pasirinkimai)
+        sub         = st.form_submit_button("📅 Išsaugoti vilkiką")
+
+    if sub:
+        if not numeris:
+            st.warning("⚠️ Įveskite numerį.")
         else:
             try:
-                c.execute(
-                    "INSERT INTO vilkikai (numeris, marke, pagaminimo_metai, tech_apziura, vadybininkas, vairuotojai, priekaba) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (num.strip(), marke.strip(), int(metai or 0), tech.isoformat(), vadyb.strip(), vair.strip(), priek)
-                )
+                c.execute("""
+                    INSERT INTO vilkikai (
+                        numeris, marke, pagaminimo_metai, tech_apziura,
+                        vadybininkas, vairuotojai, priekaba
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (numeris, marke, int(pag_metai or 0), str(tech_apz),
+                      vadyb, vair, priek))
                 conn.commit()
-                st.success("✅ Vilkikas išsaugotas.")
-                if hasattr(st, "experimental_rerun"):
-                    st.experimental_rerun()
+                st.success("✅ Išsaugota sėkmingai.")
             except Exception as e:
-                st.error(f"❌ Klaida įrašant: {e}")
+                st.error(f"❌ Klaida: {e}")
 
-    # ─── Esamų vilkikų lentelė ────────────────────────
+    # —————————————
+    # EXISTING TRUCKS TABLE
+    # —————————————
+    st.subheader("📋 Vilkikų sąrašas")
     df = pd.read_sql_query("SELECT * FROM vilkikai", conn)
+
     if df.empty:
-        st.info("🔍 Kol kas nėra vilkikų. Pridėkite naują.")
+        st.info("🔍 Kol kas nėra jokių vilkikų. Pridėkite naują aukščiau.")
         return
 
-    st.subheader("📋 Vilkikų sąrašas")
+    # show the raw table first
     st.dataframe(df, use_container_width=True)
 
-    # ─── Bendras priekabų priskyrimas ─────────────────
-    st.markdown("### 🔄 Bendras priekabų priskyrimas")
+    # —————————————
+    # TRAILER RE-ASSIGNMENT AT THE BOTTOM
+    # —————————————
+    st.markdown("### 🔄 Priekabų priskyrimai")
+    st.write("Pasirinkite naujas priekabas kiekvienam vilkikui:")
 
-    # 1) Pasirinkti vilkiką
-    vilkikai = df['numeris'].tolist()
-    selected_v = st.selectbox("Pasirinkite vilkiką", [""] + vilkikai)
+    edited = []
+    for i, row in df.iterrows():
+        # two columns: left = truck info, right = select new trailer
+        col1, col2 = st.columns([5, 2])
+        with col1:
+            st.text(f"{row['numeris']} | {row['marke']} | {row['pagaminimo_metai']} | "
+                    f"{row['tech_apziura']} | {row['vadybininkas']} | "
+                    f"{row['vairuotojai']} | {row['priekaba']}")
+        with col2:
+            # default to current assignment if present
+            idx = priekabu_sarasas.index(row['priekaba']) if row['priekaba'] in priekabu_sarasas else 0
+            new_priek = st.selectbox("", [""] + priekabu_sarasas, index=idx, key=f"edit_{i}")
+            edited.append((row['numeris'], new_priek))
 
-    if selected_v:
-        # 2) Sudaryti priekabų priskyrimų žemėlapį
-        assignment = {row['priekaba']: row['numeris'] for _, row in df.iterrows() if row['priekaba']}
-        # 3) Generuoti pasirinkimų sąrašą be jau priskirtos tai pačiai vilkikui
-        options = [""]
-        for pr in priekabu:
-            if assignment.get(pr) == selected_v:
-                continue
-            if pr in assignment:
-                label = f"{pr} — 🔴 užimta (Vil.: {assignment[pr]})"
-            else:
-                label = f"{pr} — 🟢 laisva"
-            options.append(label)
-
-        selected_label = st.selectbox("Pasirinkite priekabą", options)
-
-        if st.button("💾 Priskirti priekabą"):
-            if not selected_label:
-                st.warning("⚠️ Pasirinkite priekabą.")
-            else:
-                pr_nr = selected_label.split()[0]
-                try:
-                    c.execute(
-                        "UPDATE vilkikai SET priekaba = ? WHERE numeris = ?",
-                        (pr_nr, selected_v)
-                    )
-                    conn.commit()
-                    st.success(f"✅ Priekaba {pr_nr} priskirta vilkikui {selected_v}.")
-                    if hasattr(st, "experimental_rerun"):
-                        st.experimental_rerun()
-                except Exception as e:
-                    st.error(f"❌ Klaida priskiriant: {e}")
-
-if __name__ == "__main__":
-    main()
+    if st.button("💾 Išsaugoti priekabų pakeitimus"):
+        for num, new_val in edited:
+            c.execute("UPDATE vilkikai SET priekaba = ? WHERE numeris = ?", (new_val, num))
+        conn.commit()
+        st.success("✅ Priekabų priskyrimai atnaujinti.") 

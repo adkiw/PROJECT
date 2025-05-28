@@ -4,7 +4,7 @@ import random
 import hashlib
 
 def show(conn, c):
-    st.set_page_config(layout="wide")
+
     st.title("DISPO – Planavimo lentelė su raidėmis, datų intervalu ir deterministiniu random")
 
     lt_weekdays = {

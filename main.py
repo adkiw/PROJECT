@@ -1,15 +1,33 @@
 import streamlit as st
-from modules import dispo, kroviniai, vilkikai, priekabos, grupes, vairuotojai, klientai, darbuotojai, nustatymai
+from modules import (
+    dispo,
+    kroviniai,
+    vilkikai,
+    priekabos,
+    grupes,
+    vairuotojai,
+    klientai,
+    darbuotojai,
+    nustatymai
+)
 from db import init_db
 
+# Streamlit išdėstymo nustatymas
 st.set_page_config(layout="wide")
+
+# Prisijungimas prie DB
 conn, c = init_db()
 
 # Moduliai
-moduliai = ["Dispo", "Kroviniai", "Vilkikai", "Priekabos", "Grupės", "Vairuotojai", "Klientai", "Darbuotojai", "Nustatymai"]
+moduliai = [
+    "Dispo", "Kroviniai", "Vilkikai", "Priekabos",
+    "Grupės", "Vairuotojai", "Klientai",
+    "Darbuotojai", "Nustatymai"
+]
+
 modulis = st.sidebar.radio("📂 Pasirink modulį", moduliai)
 
-# Kiekvieno modulio kvietimas
+# Modulių kvietimas
 if modulis == "Dispo":
     dispo.show(conn, c)
 elif modulis == "Kroviniai":

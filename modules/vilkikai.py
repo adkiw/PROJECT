@@ -40,31 +40,22 @@ def show(conn, c):
     df = pd.read_sql_query("SELECT * FROM vilkikai", conn)
 
     if not df.empty:
-        new_priekabos = {}
-
-        # Rodyti lentelę su antraštėmis
-        header = list(df.columns) + ["Nauja priekaba"]
-        table_data = []
-
+        st.write("Pasirink naujas priekabas kiekvienam vilkikui:")
+        edited = []
         for i, row in df.iterrows():
-            selectbox_key = f"priekaba_select_{i}"
-            default_index = priekabu_sarasas.index(row['priekaba']) if row['priekaba'] in priekabu_sarasas else 0
-            selected = st.selectbox("", priekabu_sarasas, index=default_index, key=selectbox_key)
+            col1, col2 = st.columns([6, 2])
+            with col1:
+                st.text(f"{row['numeris']} | {row['marke']} | {row['pagaminimo_metai']} | {row['tech_apziura']} | {row['vadybininkas']} | {row['vairuotojai']} | {row['priekaba']}")
+            with col2:
+                new_priek = st.selectbox("", priekabu_sarasas, index=priekabu_sarasas.index(row['priekaba']) if row['priekaba'] in priekabu_sarasas else 0, key=f"edit_{i}")
+                edited.append((row['numeris'], new_priek))
 
-            if selected != row['priekaba']:
-                new_priekabos[row['numeris']] = selected
-
-            row_data = list(row.values) + [selected]
-            table_data.append(row_data)
-
-        # Graži lentelė su DataFrame
-        df_display = pd.DataFrame(table_data, columns=header)
-        st.dataframe(df_display, use_container_width=True)
-
-        if new_priekabos and st.button("🔄 Išsaugoti pakeitimus stulpelyje"):
-            for numeris, nauja_priek in new_priekabos.items():
-                c.execute("UPDATE vilkikai SET priekaba = ? WHERE numeris = ?", (nauja_priek, numeris))
+        if st.button("🔄 Išsaugoti pakeitimus"):
+            for num, new_val in edited:
+                c.execute("UPDATE vilkikai SET priekaba = ? WHERE numeris = ?", (new_val, num))
             conn.commit()
-            st.success("✅ Priekabos pakeistos pagal pasirinktus stulpelius.")
+            st.success("✅ Pakeitimai išsaugoti.")
+
+        st.dataframe(df, use_container_width=True)
     else:
         st.info("🔍 Kol kas nėra jokių vilkikų. Pridėkite naują aukščiau.")

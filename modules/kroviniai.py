@@ -126,27 +126,24 @@ def show(conn, c):
             conn.commit()
             st.success("✅ Krovinys įrašytas sėkmingai.")
 
-    # 5) Krovinių sąrašas su rinktinėmis metrikomis
+    # 5) Krovinių sąrašas
     st.subheader("📋 Krovinių sąrašas")
+    # Paimame visus krovinio įrašus
     df = pd.read_sql_query("SELECT * FROM kroviniai", conn)
     if df.empty:
         st.info("Kol kas nėra krovinių.")
     else:
-        # Konvertuojame į numerius
+        # Konvertuojame į numerinius tipus, kad nebūtų klaidų
         df['kilometrai'] = pd.to_numeric(df['kilometrai'], errors='coerce')
-        df['frachtas'] = pd.to_numeric(df['frachtas'], errors='coerce')
-        # Apskaičiuojame km kainą
-        df['km_kaina'] = df['frachtas'] / df['kilometrai']
-        df['km_kaina'] = df['km_kaina'].round(2)
-        # Duplicate index pagal pakrovimo numerį
+        df['frachtas']    = pd.to_numeric(df['frachtas'], errors='coerce')
+        # Apskaičiuojame km kainą, be apply
+        df['km_kaina'] = (df['frachtas'] / df['kilometrai']).round(2)
+        # Sukuriame kopijų indekso numerį pagal pakrovimo numerį
         df['dup_idx'] = df.groupby('pakrovimo_numeris').cumcount()
-        # Display ID su sufiksais
-        df['display_id'] = df.apply(
-            lambda r: str(r['id']) if r['dup_idx'] == 0 else f"{r['id']}-{r['dup_idx']}",
-            axis=1
-        )
-        # Pateikiame pasirinktus stulpelius
-        cols = ['display_id', 'pakrovimo_numeris', 'km_kaina'] + [
-            c for c in df.columns if c not in ('id','dup_idx','display_id','km_kaina')
-        ]
+        # Sukuriame rodymo ID: id arba id-dup_idx
+        df['display_id'] = df['id'].astype(str)
+        mask = df['dup_idx'] > 0
+        df.loc[mask, 'display_id'] = df.loc[mask, 'display_id'] + '-' + df.loc[mask, 'dup_idx'].astype(str)
+        # Rinkinamės stulpelius rodymui
+        cols = ['display_id', 'pakrovimo_numeris', 'km_kaina'] + [c for c in df.columns if c not in ('id','dup_idx','display_id','km_kaina')]
         st.dataframe(df[cols], use_container_width=True)

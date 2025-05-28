@@ -36,6 +36,7 @@ def show(conn, c):
     df = pd.read_sql_query("SELECT * FROM priekabos", conn)
 
     if not df.empty:
+        st.dataframe(df, use_container_width=True)
         for i, row in df.iterrows():
             with st.expander(f"🚛 Priekaba {row['numeris']}"):
                 new_tip = st.text_input("Tipas", row['priekabu_tipas'], key=f"tip_{i}")
@@ -44,7 +45,9 @@ def show(conn, c):
                 new_metai = st.text_input("Pagaminimo metai", row['pagaminimo_metai'], key=f"metai_{i}")
                 new_tech = st.date_input("Tech. apžiūra", pd.to_datetime(row['tech_apziura']), key=f"tech_{i}")
                 new_vilkikas = st.text_input("Priskirtas vilkikas", row['priskirtas_vilkikas'], key=f"pv_{i}")
-                if st.button("💾 Išsaugoti pakeitimus", key=f"save_{i}"):
+
+                col1, col2 = st.columns(2)
+                if col1.button("💾 Išsaugoti pakeitimus", key=f"save_{i}"):
                     try:
                         c.execute("""
                             UPDATE priekabos SET
@@ -60,5 +63,13 @@ def show(conn, c):
                         st.success("✅ Pakeitimai išsaugoti.")
                     except Exception as e:
                         st.error(f"❌ Klaida: {e}")
+
+                if col2.button("🗑 Ištrinti priekabą", key=f"del_{i}"):
+                    try:
+                        c.execute("DELETE FROM priekabos WHERE id = ?", (row['id'],))
+                        conn.commit()
+                        st.warning("🗑 Priekaba pašalinta.")
+                    except Exception as e:
+                        st.error(f"❌ Klaida trinant: {e}")
     else:
         st.info("ℹ️ Nėra priekabų įrašų.")

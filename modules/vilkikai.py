@@ -12,7 +12,6 @@ def show(conn, c):
     markiu_sarasas = [r[0] for r in c.execute(
         "SELECT reiksme FROM lookup WHERE kategorija = 'Markė'"
     ).fetchall()]
-    # Vairuotojų sąrašas iš lentelės
     vairuotoju_sarasas = [f"{r[1]} {r[2]}" for r in c.execute(
         "SELECT id, vardas, pavarde FROM vairuotojai"
     ).fetchall()]
@@ -25,13 +24,20 @@ def show(conn, c):
         with col1:
             numeris = st.text_input("Vilkiko numeris")
             marke = st.selectbox("Markė", [""] + markiu_sarasas)
-            pag_data = st.date_input("Pagaminimo data", value=None, key="pag_data")
-            tech_apz_date = st.date_input("Tech. apžiūros pabaiga", value=None, key="tech_data")
+            pirm_reg_data = st.date_input(
+                "Pirmos registracijos data",
+                value=None,
+                key="pr_reg_data"
+            )
+            tech_apz_date = st.date_input(
+                "Tech. apžiūros pabaiga",
+                value=None,
+                key="tech_data"
+            )
         with col2:
             vadyb = st.text_input("Transporto vadybininkas")
             vair1 = st.selectbox("Vairuotojas 1", [""] + vairuotoju_sarasas, key="v1")
             vair2 = st.selectbox("Vairuotojas 2", [""] + vairuotoju_sarasas, key="v2")
-            # Priekabos pasirinkimas su būsena
             priek_ivedimo_opcijos = [""]
             for num in priekabu_sarasas:
                 c.execute("SELECT numeris FROM vilkikai WHERE priekaba = ?", (num,))
@@ -58,7 +64,7 @@ def show(conn, c):
                     (
                         numeris,
                         marke or None,
-                        pag_data.isoformat() if pag_data else None,
+                        pirm_reg_data.isoformat() if pirm_reg_data else None,
                         tech_apz_date.isoformat() if tech_apz_date else None,
                         vadyb or None,
                         vairuotojai,
@@ -74,7 +80,7 @@ def show(conn, c):
                 st.error(f"❌ Klaida saugant: {e}")
 
     # —————————————
-    # Bendras priekabų priskyrimas (po formos, virš sąrašo)
+    # Bendras priekabų priskyrimas
     # —————————————
     st.markdown("### 🔄 Bendras priekabų priskyrimas")
     with st.form("priekabu_priskirstymas", clear_on_submit=True):
@@ -112,7 +118,7 @@ def show(conn, c):
     # —————————————
     st.subheader("📋 Vilkikų sąrašas")
     df = pd.read_sql_query(
-        "SELECT *, tech_apziura AS tech_apziuros_pabaiga FROM vilkikai ORDER BY tech_apziura ASC",
+        "SELECT *, tech_apziura AS tech_apziuros_pabaiga, pagaminimo_data AS pirmos_registracijos_data FROM vilkikai ORDER BY tech_apziura ASC",
         conn
     )
     if df.empty:

@@ -59,7 +59,7 @@ def show(conn, c):
                 priek_num = priek.split(" ")[1]
             try:
                 c.execute(
-                    "INSERT INTO vilkikai (numeris, marke, pagaminimo_data, tech_apziura, vadybininkas, vairuotojai, priekaba)"
+                    "INSERT INTO vilkikai (numeris, marke, pagaminimo_metai, tech_apziura, vadybininkas, vairuotojai, priekaba)"
                     " VALUES (?, ?, ?, ?, ?, ?, ?)",
                     (
                         numeris,
@@ -82,7 +82,7 @@ def show(conn, c):
     # —————————————
     # Bendras priekabų priskyrimas
     # —————————————
-    st.markdown("### 🔄 Bendras priekabų priskyrimas")
+    st.markdown("### 🔄 Bendras priekabų priskirstymas")
     with st.form("priekabu_priskirstymas", clear_on_submit=True):
         vilkiku_sarasas = [""] + [r[0] for r in c.execute("SELECT numeris FROM vilkikai").fetchall()]
         priek_opcijos = [""]
@@ -118,7 +118,7 @@ def show(conn, c):
     # —————————————
     st.subheader("📋 Vilkikų sąrašas")
     df = pd.read_sql_query(
-        "SELECT *, tech_apziura AS tech_apziuros_pabaiga, pagaminimo_data AS pirmos_registracijos_data FROM vilkikai ORDER BY tech_apziura ASC",
+        "SELECT *, tech_apziura AS tech_apziuros_pabaiga, pagaminimo_metai AS pirmos_registracijos_data FROM vilkikai ORDER BY tech_apziura ASC",
         conn
     )
     if df.empty:

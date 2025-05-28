@@ -42,21 +42,24 @@ def show(conn, c):
     if not df.empty:
         new_priekabos = {}
 
-        edited_rows = []
-        for i, row in df.iterrows():
-            col_config = st.columns(len(row) + 1)
-            for j, (col_name, val) in enumerate(row.items()):
-                col_config[j].markdown(f"**{col_name}**\n{val}")
+        header_cols = st.columns(len(df.columns) + 1)
+        for j, col_name in enumerate(df.columns):
+            header_cols[j].markdown(f"**{col_name}**")
+        header_cols[-1].markdown("**Keisti priekabą**")
 
-            selected = col_config[-1].selectbox(
-                "• Keisti priekabą",
+        for i, row in df.iterrows():
+            row_cols = st.columns(len(row) + 1)
+            for j, val in enumerate(row):
+                row_cols[j].markdown(str(val))
+
+            selected = row_cols[-1].selectbox(
+                "",
                 [""] + priekabu_sarasas,
                 index=priekabu_sarasas.index(row['priekaba']) + 1 if row['priekaba'] in priekabu_sarasas else 0,
                 key=f"priekaba_select_{i}"
             )
             if selected != row['priekaba']:
                 new_priekabos[row['numeris']] = selected
-                edited_rows.append(i)
 
         if new_priekabos and st.button("🔄 Išsaugoti pakeitimus stulpelyje"):
             for numeris, nauja_priek in new_priekabos.items():

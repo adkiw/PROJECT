@@ -40,29 +40,29 @@ def show(conn, c):
     df = pd.read_sql_query("SELECT * FROM vilkikai", conn)
 
     if not df.empty:
-        df_display = df.copy()
         new_priekabos = {}
 
+        edited_rows = []
         for i, row in df.iterrows():
-            col1, col2 = st.columns([5, 2])
-            with col1:
-                st.markdown(f"**{row['numeris']}** | {row['marke']} ({row['pagaminimo_metai']})")
-                st.write(f"**Tech apžiūra:** {row['tech_apziura']} | **Vadybininkas:** {row['vadybininkas']} | **Vairuotojai:** {row['vairuotojai']}")
-            with col2:
-                selected = st.selectbox(
-                    f"Pasirink priekabą",
-                    [""] + priekabu_sarasas,
-                    index=priekabu_sarasas.index(row['priekaba']) + 1 if row['priekaba'] in priekabu_sarasas else 0,
-                    key=f"inline_update_{i}"
-                )
+            col_config = st.columns(len(row) + 1)
+            for j, (col_name, val) in enumerate(row.items()):
+                col_config[j].markdown(f"**{col_name}**\n{val}")
+
+            selected = col_config[-1].selectbox(
+                "• Keisti priekabą",
+                [""] + priekabu_sarasas,
+                index=priekabu_sarasas.index(row['priekaba']) + 1 if row['priekaba'] in priekabu_sarasas else 0,
+                key=f"priekaba_select_{i}"
+            )
+            if selected != row['priekaba']:
                 new_priekabos[row['numeris']] = selected
+                edited_rows.append(i)
 
-        if st.button("🔄 Išsaugoti visus pakeitimus apačioje"):
-            for numeris, new_priek in new_priekabos.items():
-                c.execute("UPDATE vilkikai SET priekaba = ? WHERE numeris = ?", (new_priek, numeris))
+        if new_priekabos and st.button("🔄 Išsaugoti pakeitimus stulpelyje"):
+            for numeris, nauja_priek in new_priekabos.items():
+                c.execute("UPDATE vilkikai SET priekaba = ? WHERE numeris = ?", (nauja_priek, numeris))
             conn.commit()
-            st.success("✅ Priekabos atnaujintos visiems vilkikams.")
+            st.success("✅ Priekabos pakeistos pagal pasirinktus stulpelius.")
 
-        st.dataframe(df, use_container_width=True)
     else:
         st.info("🔍 Kol kas nėra jokių vilkikų. Pridėkite naują aukščiau.")

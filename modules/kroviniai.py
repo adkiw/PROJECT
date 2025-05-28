@@ -1,4 +1,3 @@
-# modules/kroviniai.py
 import streamlit as st
 import pandas as pd
 from datetime import date, time, timedelta
@@ -6,7 +5,7 @@ from datetime import date, time, timedelta
 def show(conn, c):
     st.title("DISPO – Krovinių valdymas")
 
-    # 1) Užtikriname, kad visi reikiami stulpeliai egzistuotų
+    # 1) Užtikriname, kad papildomi stulpeliai egzistuotų (ALTER TABLE)
     existing = [r[1] for r in c.execute("PRAGMA table_info(kroviniai)").fetchall()]
     extras = {
         "pakrovimo_numeris":       "TEXT",
@@ -32,46 +31,39 @@ def show(conn, c):
     # 2) Paruošiame duomenis formoms
     klientai = [r[0] for r in c.execute("SELECT pavadinimas FROM klientai").fetchall()]
     vilkikai_list = [r[0] for r in c.execute("SELECT numeris FROM vilkikai").fetchall()]
-    busena_opt = [r[0] for r in c.execute(
-        "SELECT reiksme FROM lookup WHERE kategorija = ?", ("busena",)
-    ).fetchall()] or ["suplanuotas","nesuplanuotas","pakrautas","iškrautas"]
+    busena_opt = [r[0] for r in c.execute("SELECT reiksme FROM lookup WHERE kategorija = ?", ("busena",)).fetchall()]
+    if not busena_opt:
+        busena_opt = ["suplanuotas", "nesuplanuotas", "pakrautas", "iškrautas"]
 
-    # 3) Įvedimo forma
+    # 3) Krovinio formos įvesčių skyrius
     with st.form("krovinio_forma", clear_on_submit=False):
-        # Klientas, numeriai
         col1, col2 = st.columns(2)
         klientas = col1.selectbox("Klientas", [""] + klientai)
         uzsakymo_numeris = col2.text_input("Užsakymo numeris")
         pakrovimo_numeris = st.text_input("Pakrovimo numeris")
 
-        # Data ir laikas
         col3, col4 = st.columns(2)
         pak_data = col3.date_input("Pakrovimo data", date.today())
-        pk_nuo  = col3.time_input("Laikas nuo (pakrovimas)", time(8,0))
-        pk_iki  = col3.time_input("Laikas iki (pakrovimas)", time(17,0))
+        pk_nuo  = col3.time_input("Laikas nuo (pakrovimas)", time(8, 0))
+        pk_iki  = col3.time_input("Laikas iki (pakrovimas)", time(17, 0))
         isk_data= col4.date_input("Iškrovimo data", pak_data + timedelta(days=1))
-        is_nuo  = col4.time_input("Laikas nuo (iškrovimas)", time(8,0))
-        is_iki  = col4.time_input("Laikas iki (iškrovimas)", time(17,0))
+        is_nuo  = col4.time_input("Laikas nuo (iškrovimas)", time(8, 0))
+        is_iki  = col4.time_input("Laikas iki (iškrovimas)", time(17, 0))
 
-        # Adresai
         col5, col6 = st.columns(2)
         pk_salis  = col5.text_input("Pakrovimo šalis")
         pk_miestas= col5.text_input("Pakrovimo miestas")
         is_salis  = col6.text_input("Iškrovimo šalis")
         is_miestas= col6.text_input("Iškrovimo miestas")
 
-        # Vilkikas + automatiškai rodoma priekaba
         col7, col8 = st.columns(2)
         vilkikas = col7.selectbox("Vilkikas", [""] + vilkikai_list, key="vilkikas")
         priekaba = ""
         if vilkikas:
-            row = c.execute(
-                "SELECT priekaba FROM vilkikai WHERE numeris = ?", (vilkikas,)
-            ).fetchone()
-            priekaba = row[0] or "" if row else ""
+            row = c.execute("SELECT priekaba FROM vilkikai WHERE numeris = ?", (vilkikas,)).fetchone()
+            priekaba = row[0] if row and row[0] else ""
         col8.text_input("Priekaba", value=priekaba, disabled=True, key="priekaba")
 
-        # Matmenys ir kiti skaičiai
         col9, col10, col11, col12 = st.columns(4)
         km    = col9.text_input("Kilometrai")
         fr    = col10.text_input("Frachtas (€)")
@@ -81,9 +73,8 @@ def show(conn, c):
         busena = st.selectbox("Būsena", busena_opt)
         submit = st.form_submit_button("📅 Įrašyti krovinį")
 
-    # 4) Įrašymas
+    # 4) Įrašymas į DB
     if submit:
-        # Pagrindinės validacijos
         if pak_data > isk_data:
             st.error("❌ Pakrovimo data negali būti vėlesnė už iškrovimo datą.")
         elif not klientas or not uzsakymo_numeris:
@@ -92,21 +83,23 @@ def show(conn, c):
             # Unikalus numeris
             base = uzsakymo_numeris
             egz = [r[0] for r in c.execute(
-                "SELECT uzsakymo_numeris FROM kroviniai WHERE uzsakymo_numeris LIKE ?",
-                (f"{base}%",)
+                "SELECT uzsakymo_numeris FROM kroviniai WHERE uzsakymo_numeris LIKE ?", (f"{base}%",)
             ).fetchall()]
             if base in egz:
                 suffix = sum(1 for x in egz if x.startswith(base))
                 uzsakymo_numeris = f"{base}-{suffix}"
-                st.warning(f"🔔 Numeris jau egzistuoja – išsaugotas kaip {uzsakymo_numeris}.")
+                st.warning(f"🔔 Numeris jau egzistuoja – įrašytas kaip {uzsakymo_numeris}.")
 
             # Konvertuojame skaičius
-            km  = int(km or 0)
-            frt = float(fr or 0)
-            sw  = int(sv or 0)
-            pl  = int(pal or 0)
+            try:
+                km_val  = int(km or 0)
+                fr_val  = float(fr or 0)
+                sv_val  = int(sv or 0)
+                pal_val = int(pal or 0)
+            except:
+                st.error("❌ Skaičių laukeliai turi būti teisingi.")
+                return
 
-            # Insert – dabar sutampa su lentelės schema
             c.execute("""
                 INSERT INTO kroviniai (
                     klientas, uzsakymo_numeris, pakrovimo_numeris,
@@ -124,15 +117,23 @@ def show(conn, c):
                 pk_salis, pk_miestas,
                 is_salis, is_miestas,
                 vilkikas, priekaba, f"vadyb_{vilkikas.lower()}",
-                km, frt, sw, pl, busena
+                km_val, fr_val, sv_val, pal_val, busena
             ))
             conn.commit()
             st.success("✅ Krovinys įrašytas sėkmingai.")
 
-    # 5) Sąrašas
+    # 5) Krovinių sąrašas su km_kaina ir display_id
     st.subheader("📋 Krovinių sąrašas")
-    df = pd.read_sql_query("SELECT * FROM kroviniai", conn)
+    df = pd.read_sql_query("SELECT id, pakrovimo_numeris, kilometrai, frachtas, * FROM kroviniai", conn)
     if df.empty:
         st.info("Kol kas nėra krovinių.")
     else:
-        st.dataframe(df, use_container_width=True)
+        # km kaina
+        df['km_kaina'] = df.apply(lambda r: round(r['frachtas']/r['kilometrai'],2) if r['kilometrai'] else None, axis=1)
+        # duplicate index per pakrovimo_numeris
+        df['dup_idx'] = df.groupby('pakrovimo_numeris').cumcount()
+        # display_id
+        df['display_id'] = df.apply(lambda r: str(r['id']) if r['dup_idx']==0 else f"{r['id']}-{r['dup_idx']}", axis=1)
+        # reorder columns
+        cols = ['display_id','pakrovimo_numeris','km_kaina'] + [c for c in df.columns if c not in ('id','dup_idx','display_id','km_kaina')]
+        st.dataframe(df[cols], use_container_width=True)

@@ -16,7 +16,8 @@ def show(conn, c):
         tech_apz = st.date_input("Tech. apžiūra", value=date.today())
         vadyb = st.text_input("Transporto vadybininkas")
         vair = st.text_input("Vairuotojai (atskirti kableliais)")
-        priek = st.selectbox("Priekaba", priekabu_sarasas if priekabu_sarasas else [""])
+        priekabu_pasirinkimai = [""] + priekabu_sarasas
+        priek = st.selectbox("Priekaba", priekabu_pasirinkimai)
         sub = st.form_submit_button("📅 Išsaugoti vilkiką")
 
     if sub:
@@ -39,9 +40,22 @@ def show(conn, c):
     df = pd.read_sql_query("SELECT * FROM vilkikai", conn)
 
     if not df.empty:
+        st.dataframe(df, use_container_width=True)
+
         for i, row in df.iterrows():
             with st.expander(f"{row['numeris']} - {row['marke']} ({row['pagaminimo_metai']})"):
-                new_priek = st.selectbox(f"🚛 Priekaba ({row['numeris']})", priekabu_sarasas, index=priekabu_sarasas.index(row['priekaba']) if row['priekaba'] in priekabu_sarasas else 0, key=f"edit_priekaba_{i}")
+                st.write(f"**Markė:** {row['marke']}")
+                st.write(f"**Pagaminimo metai:** {row['pagaminimo_metai']}")
+                st.write(f"**Tech. apžiūra:** {row['tech_apziura']}")
+                st.write(f"**Vadybininkas:** {row['vadybininkas']}")
+                st.write(f"**Vairuotojai:** {row['vairuotojai']}")
+
+                new_priek = st.selectbox(
+                    f"🚛 Priekaba ({row['numeris']})",
+                    priekabu_pasirinkimai,
+                    index=priekabu_pasirinkimai.index(row['priekaba']) if row['priekaba'] in priekabu_pasirinkimai else 0,
+                    key=f"edit_priekaba_{i}"
+                )
                 if st.button(f"🔄 Atnaujinti priekabą {row['numeris']}", key=f"btn_update_{i}"):
                     c.execute("UPDATE vilkikai SET priekaba = ? WHERE numeris = ?", (new_priek, row['numeris']))
                     conn.commit()

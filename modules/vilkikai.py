@@ -108,11 +108,20 @@ def show(conn, c):
 
     # Vilkikų sąrašas su likusiomis dienomis
     st.subheader("📋 Vilkikų sąrašas")
-    df = pd.read_sql_query(
-        "SELECT numeris, marke, pagaminimo_metai AS pirmos_registracijos_data, tech_apziura AS tech_apziuros_pabaiga, \  
-        draudimas AS draudimo_galiojimo, vadybininkas, vairuotojai, priekaba FROM vilkikai ORDER BY tech_apziura ASC",
-        conn
-    )
+    query = '''
+        SELECT
+            numeris,
+            marke,
+            pagaminimo_metai AS pirmos_registracijos_data,
+            tech_apziura AS tech_apziuros_pabaiga,
+            draudimas AS draudimo_galiojimo,
+            vadybininkas,
+            vairuotojai,
+            priekaba
+        FROM vilkikai
+        ORDER BY tech_apziura ASC
+    '''
+    df = pd.read_sql_query(query, conn)
     if df.empty:
         st.info("🔍 Kol kas nėra jokių vilkikų. Pridėkite naują aukščiau.")
         return

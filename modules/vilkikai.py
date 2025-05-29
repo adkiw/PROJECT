@@ -2,17 +2,11 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 
-# DISPO – Vilkikų valdymas su draudimo valdymu
-
 def show(conn, c):
     st.title("DISPO – Vilkikų valdymas")
 
-    # Pridėti draudimo stulpelį, jei dar nėra
-    try:
-        c.execute("ALTER TABLE vilkikai ADD COLUMN draudimas TEXT")
-        conn.commit()
-    except Exception:
-        pass
+    # Užtikriname, kad stulpelis 'dokumentas' nebebūtų naudojamas
+    # (dokumentų funkcionalumas pašalintas)
 
     # Paruošiame duomenis
     priekabu_sarasas = [r[0] for r in c.execute("SELECT numeris FROM priekabos").fetchall()]
@@ -27,12 +21,10 @@ def show(conn, c):
             marke = st.selectbox("Markė", [""] + markiu_sarasas)
             pirm_reg_data = st.date_input("Pirmos registracijos data", value=None, key="pr_reg_data")
             tech_apz_date = st.date_input("Tech. apžiūros pabaiga", value=None, key="tech_data")
-            draudimo_data = st.date_input("Draudimo galiojimo pabaiga", value=None, key="draud_data")
         with col2:
             vadyb = st.text_input("Transporto vadybininkas")
             vair1 = st.selectbox("Vairuotojas 1", [""] + vairuotoju_sarasas, key="v1")
             vair2 = st.selectbox("Vairuotojas 2", [""] + vairuotoju_sarasas, key="v2")
-            # Priekabų priskyrimas
             priek_ivedimo_opcijos = [""]
             for num in priekabu_sarasas:
                 c.execute("SELECT numeris FROM vilkikai WHERE priekaba = ?", (num,))
@@ -54,29 +46,20 @@ def show(conn, c):
                 priek_num = priek.split(" ")[1]
             try:
                 c.execute(
-                    "INSERT INTO vilkikai (numeris, marke, pagaminimo_metai, tech_apziura, draudimas, vadybininkas, vairuotojai, priekaba)"
-                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        numeris,
-                        marke or None,
-                        pirm_reg_data.isoformat() if pirm_reg_data else None,
-                        tech_apz_date.isoformat() if tech_apz_date else None,
-                        draudimo_data.isoformat() if draudimo_data else None,
-                        vadyb or None,
-                        vairuotojai,
-                        priek_num
-                    )
+                    "INSERT INTO vilkikai (numeris, marke, pagaminimo_metai, tech_apziura, vadybininkas, vairuotojai, priekaba)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (numeris, marke or None,
+                     pirm_reg_data.isoformat() if pirm_reg_data else None,
+                     tech_apz_date.isoformat() if tech_apz_date else None,
+                     vadyb or None,
+                     vairuotojai,
+                     priek_num)
                 )
                 conn.commit()
                 st.success("✅ Vilkikas išsaugotas sėkmingai.")
-                # Techninės apžiūros likusios dienos
                 if tech_apz_date:
                     days_left = (tech_apz_date - date.today()).days
                     st.info(f"🔧 Dienų iki techninės apžiūros liko: {days_left}")
-                # Draudimo likusios dienos
-                if draudimo_data:
-                    ins_left = (draudimo_data - date.today()).days
-                    st.info(f"🛡️ Dienų iki draudimo galiojimo pabaigos liko: {ins_left}")
             except Exception as e:
                 st.error(f"❌ Klaida saugant: {e}")
 
@@ -109,14 +92,11 @@ def show(conn, c):
     # Vilkikų sąrašas su likusiomis dienomis
     st.subheader("📋 Vilkikų sąrašas")
     df = pd.read_sql_query(
-        "SELECT numeris, marke, pagaminimo_metai AS pirmos_registracijos_data, tech_apziura AS tech_apziuros_pabaiga, \  
-        draudimas AS draudimo_galiojimo, vadybininkas, vairuotojai, priekaba FROM vilkikai ORDER BY tech_apziura ASC",
+        "SELECT *, tech_apziura AS tech_apziuros_pabaiga, pagaminimo_metai AS pirmos_registracijos_data FROM vilkikai ORDER BY tech_apziura ASC",
         conn
     )
     if df.empty:
         st.info("🔍 Kol kas nėra jokių vilkikų. Pridėkite naują aukščiau.")
         return
-    # Dienų likučiai
-    df['dienu_liko_tech'] = df['tech_apziuros_pabaiga'].apply(lambda x: (date.fromisoformat(x) - date.today()).days if x else None)
-    df['dienu_liko_draud'] = df['draudimo_galiojimo'].apply(lambda x: (date.fromisoformat(x) - date.today()).days if x else None)
+    df["dienu_liko"] = df["tech_apziuros_pabaiga"].apply(lambda x: (date.fromisoformat(x) - date.today()).days if x else None)
     st.dataframe(df, use_container_width=True)

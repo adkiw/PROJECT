@@ -1,10 +1,10 @@
-# modules/klientai.py
-
 import streamlit as st
 import pandas as pd
 
+# modules/klientai.py
+
 def show(conn, c):
-    # 1. Ensure required columns exist
+    # 1. Ensure required columns exist in klientai table
     expected = {
         'vat_numeris': 'TEXT',
         'kontaktinis_asmuo': 'TEXT',
@@ -30,11 +30,11 @@ def show(conn, c):
 
     st.title("DISPO – Klientai")
 
-    # 2. Initialize or reset selection flag
+    # 2. Selection state for editing
     if 'selected_client' not in st.session_state:
         st.session_state.selected_client = None
 
-    # 3. CARD GRID VIEW
+    # 3. Card grid view
     if st.session_state.selected_client is None:
         df = pd.read_sql("SELECT id, pavadinimas, miestas, vat_numeris FROM klientai", conn)
         cols_per_row = 4
@@ -44,31 +44,30 @@ def show(conn, c):
             with col:
                 st.markdown(f"**{row['pavadinimas']}**")
                 st.text(f"{row['miestas']} | VAT: {row['vat_numeris']}")
-                # on_click will trigger a rerun automatically
                 if st.button("✏️ Redaguoti", key=f"edit_{row['id']}"):
                     st.session_state.selected_client = row['id']
-        return  # stop here when in grid mode
+        return  # stop here
 
-    # 4. DETAIL / EDIT FORM
-    sel = st.session_state.selected_client
-    df_cli = pd.read_sql("SELECT * FROM klientai WHERE id=?", conn, params=(sel,))
+    # 4. Detail/edit form view
+    sel_id = st.session_state.selected_client
+    df_cli = pd.read_sql("SELECT * FROM klientai WHERE id=?", conn, params=(sel_id,))
     if df_cli.empty:
         st.error("Klientas nerastas.")
         return
     cli = df_cli.iloc[0]
 
-    # editable fields (label, key)
+    # Fields: (label, column key)
     fields = [
         ("Įmonės pavadinimas",        "pavadinimas"),
         ("PVM/VAT numeris",           "vat_numeris"),
-        ("Kontaktinis asmuo",         "kontaktinis_asmuotis"),
+        ("Kontaktinis asmuo",         "kontaktinis_asmuo"),
         ("Kontaktinis el. paštas",    "kontaktinis_el_pastas"),
         ("Kontaktinis tel. nr",       "kontaktinis_tel"),
         ("Šalis",                     "salis"),
         ("Regionas",                  "regionas"),
         ("Miestas",                   "miestas"),
         ("Adresas",                   "adresas"),
-        ("Sąskaitų kontaktinis asmuo","saskaitos_asmuotis"),
+        ("Sąskaitų kontaktinis asmuo","saskaitos_asmuo"),
         ("Sąskaitų el. paštas",      "saskaitos_el_pastas"),
         ("Sąskaitų tel. nr",         "saskaitos_tel"),
         ("COFACE limitas",            "coface_limitas"),
@@ -77,42 +76,36 @@ def show(conn, c):
     ]
     limit_keys = {"coface_limitas", "musu_limitas", "likes_limitas"}
 
-    # build form
     with st.form("edit_form", clear_on_submit=False):
-        # lay out fields in rows of 3
+        # Layout inputs in rows of 3
         for i in range(0, len(fields), 3):
-            cols = st.columns(3)
-            for j in range(3):
-                if i+j < len(fields):
-                    label, key = fields[i+j]
-                    value = cli[key]
-                    cols[j].text_input(label, key=key, value=str(value))
+            cols_row = st.columns(3)
+            for j, (label, key) in enumerate(fields[i:i+3]):
+                value = cli[key]
+                cols_row[j].text_input(label, key=key, value=str(value))
 
-        # two buttons: update and back
-        col_u, col_b = st.columns(2)
-        do_update = col_u.form_submit_button("💾 Atnaujinti klientą")
-        do_back   = col_b.form_submit_button("🔙 Grįžti")
+        # Buttons: update or back
+        col_update, col_back = st.columns(2)
+        update_clicked = col_update.form_submit_button("💾 Atnaujinti klientą")
+        back_clicked   = col_back.form_submit_button("🔙 Grįžti")
 
-        if do_update:
-            # collect and update
+        if update_clicked:
+            # Collect updated values
             vals = []
             for _, key in fields:
                 v = st.session_state[key]
                 if key in limit_keys:
                     v = float(v) if v else 0.0
                 vals.append(v)
-            vals.append(sel)
-            set_clause = ", ".join(f"{k}=?" for _, k in fields)
+            vals.append(sel_id)
+            set_clause = ", ".join(f"{key}=?" for _, key in fields)
             sql = f"UPDATE klientai SET {set_clause} WHERE id=?"
             c.execute(sql, tuple(vals))
             conn.commit()
             st.success("✅ Klientas atnaujintas.")
-            # clear selection so we return to grid
             st.session_state.selected_client = None
-            return  # rerun happens automatically
+            return
 
-        if do_back:
+        if back_clicked:
             st.session_state.selected_client = None
-            return  # back to grid
-
-    # 5. After edit/form, show updated grid automatically
+            return

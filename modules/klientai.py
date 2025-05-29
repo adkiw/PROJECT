@@ -4,7 +4,7 @@ import pandas as pd
 # modules/klientai.py
 
 def show(conn, c):
-    # 1. Add missing columns if needed
+    # -- 1. Ensure DB has required columns
     expected = {
         'vat_numeris': 'TEXT',
         'kontaktinis_asmuo': 'TEXT',
@@ -20,17 +20,44 @@ def show(conn, c):
     }
     c.execute("PRAGMA table_info(klientai)")
     existing = [row[1] for row in c.fetchall()]
-    for col, typ in expected.items():
+    for col, col_type in expected.items():
         if col not in existing:
             try:
-                c.execute(f"ALTER TABLE klientai ADD COLUMN {col} {typ}")
+                c.execute(f"ALTER TABLE klientai ADD COLUMN {col} {col_type}")
                 conn.commit()
             except Exception:
                 pass
 
     st.title("DISPO – Klientai")
 
-    # 2. Define fields: label and session_state key
+    # -- 2. Session state for selection
+    if 'selected_client' not in st.session_state:
+        st.session_state.selected_client = None
+
+    # -- 3. Card grid view
+    if st.session_state.selected_client is None:
+        df = pd.read_sql("SELECT id, pavadinimas, miestas, vat_numeris FROM klientai", conn)
+        n_cols = 4
+        cols = st.columns(n_cols)
+        for idx, row in df.iterrows():
+            col = cols[idx % n_cols]
+            with col:
+                st.markdown(f"**{row['pavadinimas']}**")
+                st.text(f"{row['miestas']} | VAT: {row['vat_numeris']}")
+                if st.button("✏️ Redaguoti", key=f"edit_{row['id']}"):
+                    st.session_state.selected_client = row['id']
+                    st.experimental_rerun()
+        return
+
+    # -- 4. Detail form for editing
+    sel_id = st.session_state.selected_client
+    df_cli = pd.read_sql("SELECT * FROM klientai WHERE id=?", conn, params=(sel_id,))
+    if df_cli.empty:
+        st.error("Klientas nerastas.")
+        return
+    cli = df_cli.iloc[0]
+
+    # Define editable fields
     fields = [
         ("Įmonės pavadinimas",        "pavadinimas"),
         ("PVM/VAT numeris",           "vat_numeris"),
@@ -50,62 +77,47 @@ def show(conn, c):
     ]
     limit_keys = {"coface_limitas", "musu_limitas", "likes_limitas"}
 
-    # 3. Initialize session_state for all keys
-    for _, key in fields:
-        if key not in st.session_state:
-            st.session_state[key] = ""
+    with st.form("edit_form", clear_on_submit=False):
+        cols1 = st.columns(3)
+        for i, (label, key) in enumerate(fields[:3]):
+            cols1[i].text_input(label, key=key, value=cli[key])
+        cols2 = st.columns(3)
+        for i, (label, key) in enumerate(fields[3:6]):
+            cols2[i].text_input(label, key=key, value=cli[key])
+        cols3 = st.columns(3)
+        for i, (label, key) in enumerate(fields[6:9]):
+            cols3[i].text_input(label, key=key, value=cli[key])
+        cols4 = st.columns(3)
+        for i, (label, key) in enumerate(fields[9:12]):
+            cols4[i].text_input(label, key=key, value=cli[key])
+        cols5 = st.columns(3)
+        for i, (label, key) in enumerate(fields[12:15]):
+            val = cli[key]
+            cols5[i].text_input(label, key=key, value=str(val))
 
-    # 4. Render first two rows of inputs (7 per row)
-    # Row 1
-    row1 = fields[:7]
-    cols1 = st.columns(7)
-    for i, (label, key) in enumerate(row1):
-        cols1[i].text_input(label, key=key)
-    # Row 2
-    row2 = fields[7:14]
-    cols2 = st.columns(7)
-    for i, (label, key) in enumerate(row2):
-        cols2[i].text_input(label, key=key)
+        # Buttons
+        update, back = st.columns([1,1])
+        with update:
+            st.form_submit_button("💾 Atnaujinti klientą", on_click=lambda: update_client(conn, c, fields, limit_keys))
+        with back:
+            st.form_submit_button("🔙 Atgal į korteles", on_click=lambda: clear_selection())
 
-    # 5. Last field + save button
-    cols3 = st.columns([4,3])  # wider for input
-    cols3[0].text_input(fields[14][0], key=fields[14][1])
-
-    def save_and_clear():
-        try:
-            # Collect values
-            vals = []
-            for _, key in fields:
-                v = st.session_state[key]
-                if key in limit_keys:
-                    v = float(v) if v else 0.0
-                vals.append(v)
-            # Insert
-            c.execute(
-                """
-                INSERT INTO klientai (
-                    pavadinimas, vat_numeris,
-                    kontaktinis_asmuo, kontaktinis_el_pastas, kontaktinis_tel,
-                    salis, regionas, miestas, adresas,
-                    saskaitos_asmuo, saskaitos_el_pastas, saskaitos_tel,
-                    coface_limitas, musu_limitas, likes_limitas
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                tuple(vals)
-            )
-            conn.commit()
-            st.success("✅ Klientas įrašytas.")
-        except Exception as e:
-            st.error(f"❌ Klaida: {e}")
-        # Clear inputs
+    # -- Callback functions
+    def update_client(conn, c, fields, limit_keys):
+        data = []
         for _, key in fields:
-            st.session_state[key] = ""
+            v = st.session_state[key]
+            if key in limit_keys:
+                v = float(v) if v else 0.0
+            data.append(v)
+        data.append(sel_id)
+        cols = ", ".join(f"{k}=?" for _, k in fields)
+        sql = f"UPDATE klientai SET {cols} WHERE id=?"
+        c.execute(sql, tuple(data))
+        conn.commit()
+        st.success("✅ Klientas atnaujintas.")
+        clear_selection()
 
-    cols3[1].button("💾 Išsaugoti klientą", on_click=save_and_clear)
-
-    # 6. Show client list without legacy/duplicate cols
-    st.subheader("📋 Klientų sąrašas")
-    cols_to_show = ['id'] + [key for _, key in fields]
-    df = pd.read_sql("SELECT * FROM klientai", conn)
-    df = df[cols_to_show]
-    st.dataframe(df, use_container_width=True)
+    def clear_selection():
+        st.session_state.selected_client = None
+        st.experimental_rerun()

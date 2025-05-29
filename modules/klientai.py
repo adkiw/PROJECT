@@ -4,9 +4,7 @@ import streamlit as st
 import pandas as pd
 
 def show(conn, c):
-    st.title("DISPO – Klientai")
-
-    # 1. Ensure all needed columns exist
+    # 1. Ensure required columns exist
     expected = {
         'vat_numeris':          'TEXT',
         'kontaktinis_asmuo':    'TEXT',
@@ -33,12 +31,28 @@ def show(conn, c):
             except:
                 pass
 
-    # 2. Load all clients into DataFrame
+    st.title("DISPO – Klientai")
+
+    # 2. Load full client table
     df = pd.read_sql("SELECT * FROM klientai", conn)
 
-    # 3. Interactive editor (requires Streamlit ≥1.23)
+    # 3. Filters above editor
+    filters = {}
+    cols_f = st.columns(len(df.columns))
+    for i, col_name in enumerate(df.columns):
+        filters[col_name] = cols_f[i].text_input(f"🔍 {col_name}", key=f"f_{col_name}")
+
+    # 4. Apply filters
+    df_filtered = df.copy()
+    for col_name, val in filters.items():
+        if val:
+            df_filtered = df_filtered[
+                df_filtered[col_name].astype(str).str.contains(val, case=False, na=False)
+            ]
+
+    # 5. Interactive editor (Streamlit ≥1.23)
     edited = st.data_editor(
-        df,
+        df_filtered,
         hide_index=True,
         use_container_width=True,
         column_config={
@@ -46,25 +60,23 @@ def show(conn, c):
         }
     )
 
-    # 4. Save changes button
+    # 6. Save changes
     if st.button("💾 Išsaugoti pakeitimus"):
-        original_ids = set(df["id"].dropna().astype(int))
+        orig_ids = set(df["id"].dropna().astype(int))
         for _, row in edited.iterrows():
             rid = row["id"]
-            # New row: id is NaN or None
+            # New row
             if pd.isna(rid):
-                # insert new client
                 cols = [c for c in df.columns if c != "id"]
                 vals = [row[c] for c in cols]
-                placeholders = ", ".join("?" for _ in cols)
-                sql = f"INSERT INTO klientai ({', '.join(cols)}) VALUES ({placeholders})"
+                ph = ", ".join("?" for _ in cols)
+                sql = f"INSERT INTO klientai ({', '.join(cols)}) VALUES ({ph})"
                 c.execute(sql, tuple(vals))
             else:
-                # update existing client
                 rid = int(rid)
                 cols = [c for c in df.columns if c != "id"]
-                set_clause = ", ".join(f"{col}=?" for col in cols)
-                vals = [row[col] for col in cols] + [rid]
+                set_clause = ", ".join(f"{c}=?" for c in cols)
+                vals = [row[c] for c in cols] + [rid]
                 sql = f"UPDATE klientai SET {set_clause} WHERE id=?"
                 c.execute(sql, tuple(vals))
         conn.commit()

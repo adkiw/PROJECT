@@ -4,7 +4,7 @@ import pandas as pd
 # modules/klientai.py
 
 def show(conn, c):
-    # 1. Add missing columns to klientai table if they don't exist
+    # 1. Add missing columns if needed
     expected = {
         'vat_numeris': 'TEXT',
         'kontaktinis_asmuo': 'TEXT',
@@ -20,18 +20,17 @@ def show(conn, c):
     }
     c.execute("PRAGMA table_info(klientai)")
     existing = [row[1] for row in c.fetchall()]
-    for col, col_type in expected.items():
+    for col, typ in expected.items():
         if col not in existing:
             try:
-                c.execute(f"ALTER TABLE klientai ADD COLUMN {col} {col_type}")
+                c.execute(f"ALTER TABLE klientai ADD COLUMN {col} {typ}")
                 conn.commit()
             except Exception:
                 pass
 
-    # 2. Page title
     st.title("DISPO – Klientai")
 
-    # 3. Define fields: (label, session_state key)
+    # 2. Define fields: label and session_state key
     fields = [
         ("Įmonės pavadinimas",        "pavadinimas"),
         ("PVM/VAT numeris",           "vat_numeris"),
@@ -51,29 +50,37 @@ def show(conn, c):
     ]
     limit_keys = {"coface_limitas", "musu_limitas", "likes_limitas"}
 
-    # 4. Initialize session_state defaults
+    # 3. Initialize session_state for all keys
     for _, key in fields:
         if key not in st.session_state:
             st.session_state[key] = ""
 
-    # 5. Render inputs in two columns
-    cols = st.columns(2)
-    for i, (label, key) in enumerate(fields):
-        col = cols[i % 2]
-        col.text_input(label, key=key)
+    # 4. Render first two rows of inputs (7 per row)
+    # Row 1
+    row1 = fields[:7]
+    cols1 = st.columns(7)
+    for i, (label, key) in enumerate(row1):
+        cols1[i].text_input(label, key=key)
+    # Row 2
+    row2 = fields[7:14]
+    cols2 = st.columns(7)
+    for i, (label, key) in enumerate(row2):
+        cols2[i].text_input(label, key=key)
 
-    # 6. Save callback
+    # 5. Last field + save button
+    cols3 = st.columns([4,3])  # wider for input
+    cols3[0].text_input(fields[14][0], key=fields[14][1])
+
     def save_and_clear():
         try:
-            # Gather input data
-            data = []
-            for label, key in fields:
-                val = st.session_state[key]
+            # Collect values
+            vals = []
+            for _, key in fields:
+                v = st.session_state[key]
                 if key in limit_keys:
-                    val = float(val) if val else 0.0
-                data.append(val)
-
-            # Insert into DB
+                    v = float(v) if v else 0.0
+                vals.append(v)
+            # Insert
             c.execute(
                 """
                 INSERT INTO klientai (
@@ -84,7 +91,7 @@ def show(conn, c):
                     coface_limitas, musu_limitas, likes_limitas
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                tuple(data)
+                tuple(vals)
             )
             conn.commit()
             st.success("✅ Klientas įrašytas.")
@@ -94,10 +101,11 @@ def show(conn, c):
         for _, key in fields:
             st.session_state[key] = ""
 
-    # 7. Save button (only on click)
-    st.button("💾 Išsaugoti klientą", on_click=save_and_clear)
+    cols3[1].button("💾 Išsaugoti klientą", on_click=save_and_clear)
 
-    # 8. Display client list
+    # 6. Show client list without legacy/duplicate cols
     st.subheader("📋 Klientų sąrašas")
+    cols_to_show = ['id'] + [key for _, key in fields]
     df = pd.read_sql("SELECT * FROM klientai", conn)
+    df = df[cols_to_show]
     st.dataframe(df, use_container_width=True)

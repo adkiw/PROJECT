@@ -68,7 +68,7 @@ def show(conn, c):
         for i, col in enumerate(df.columns):
             hdr[i].markdown(f"**{col}**")
         hdr[-1].markdown("**Veiksmai**")
-        # Data rows with separator
+        # Data rows with 1cm spacing
         for _, row in df.iterrows():
             row_cols = st.columns(len(df.columns) + 1)
             for i, col in enumerate(df.columns):
@@ -76,7 +76,7 @@ def show(conn, c):
             row_cols[-1].button(
                 "✏️", key=f"edit_{row['id']}", on_click=start_edit, args=(row['id'],)
             )
-            st.markdown("---")
+            st.markdown("<div style='height:1cm'></div>", unsafe_allow_html=True)
         return
 
     # 5. Detail / new form

@@ -47,7 +47,7 @@ def show(conn, c):
 
     # 3) Title + Add button
     title_col, add_col = st.columns([9,1])
-    title_col.title("DISPO – Krovinių valdymas")
+    title_col.title("Užsakymų valdymas")
     add_col.button("➕ Pridėti naują krovinį", on_click=start_new)
 
     # 4) Init state

@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 
-# DISPO – Vilkikų valdymas su draudimo valdymu
+# DISPO – Vilkikų valdymas su draudimo ir vairuotojų valdymu
 
 def show(conn, c):
     st.title("DISPO – Vilkikų valdymas")
@@ -129,3 +129,23 @@ def show(conn, c):
     df['dienu_liko_tech'] = df['tech_apziuros_pabaiga'].apply(lambda x: (date.fromisoformat(x) - date.today()).days if x else None)
     df['dienu_liko_draud'] = df['draudimo_galiojimo'].apply(lambda x: (date.fromisoformat(x) - date.today()).days if x else None)
     st.dataframe(df, use_container_width=True)
+
+    # Vairuotojų keitimo modulis
+    st.subheader("✏️ Keisti vairuotojus")
+    vair_opcijos = [""] + vairuotoju_sarasas
+    for row in df.itertuples():
+        numeris = row.numeris
+        cur = row.vairuotojai.split(", ") if row.vairuotojai else ["", ""]
+        with st.expander(f"Vilkiko {numeris} vairuotojai: {row.vairuotojai or 'nepriskirti'}"):
+            with st.form(f"form_edit_{numeris}", clear_on_submit=False):
+                v1 = st.selectbox("Vairuotojas 1", vair_opcijos, index=vair_opcijos.index(cur[0]) if cur[0] in vair_opcijos else 0)
+                v2 = st.selectbox("Vairuotojas 2", vair_opcijos, index=vair_opcijos.index(cur[1]) if len(cur)>1 and cur[1] in vair_opcijos else 0)
+                btn = st.form_submit_button("💾 Išsaugoti")
+            if btn:
+                nauji = ", ".join(filter(None, [v1, v2])) or None
+                try:
+                    c.execute("UPDATE vilkikai SET vairuotojai = ? WHERE numeris = ?", (nauji, numeris))
+                    conn.commit()
+                    st.success(f"✅ Vairuotojai vilkikui {numeris} atnaujinti.")
+                except Exception as e:
+                    st.error(f"❌ Klaida atnaujinant: {e}")

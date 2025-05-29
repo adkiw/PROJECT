@@ -50,7 +50,7 @@ def show(conn, c):
     title_col.title("Užsakymų valdymas")
     add_col.button("➕ Pridėti naują krovinį", on_click=start_new)
 
-    # 4) Init state
+    # 4) Initialize state
     if 'selected_cargo' not in st.session_state:
         st.session_state.selected_cargo = None
 
@@ -60,11 +60,11 @@ def show(conn, c):
         if df.empty:
             st.info("Kol kas nėra krovinių.")
         else:
-            # filters row above headers
-            cols_f = st.columns(len(df.columns) + 1)
+            # filters row directly above headers
+            filter_cols = st.columns(len(df.columns) + 1)
             for i, col in enumerate(df.columns):
-                cols_f[i].text_input(f"🔍 {col}", key=f"f_{col}")
-            cols_f[-1].write("")
+                filter_cols[i].text_input(col, key=f"f_{col}")
+            filter_cols[-1].write("")
             # apply filters
             for col in df.columns:
                 val = st.session_state.get(f"f_{col}", "")
@@ -72,12 +72,14 @@ def show(conn, c):
                     df = df[df[col].astype(str).str.contains(val, case=False, na=False)]
             # headers
             hdr = st.columns(len(df.columns) + 1)
-            for i, col in enumerate(df.columns): hdr[i].markdown(f"**{col}**")
+            for i, col in enumerate(df.columns):
+                hdr[i].markdown(f"**{col}**")
             hdr[-1].markdown("**Veiksmai**")
             # rows
             for _, row in df.iterrows():
                 row_cols = st.columns(len(df.columns) + 1)
-                for i, col in enumerate(df.columns): row_cols[i].write(row[col])
+                for i, col in enumerate(df.columns):
+                    row_cols[i].write(row[col])
                 row_cols[-1].button(
                     "✏️", key=f"edit_{row['id']}",
                     on_click=start_edit, args=(row['id'],)
@@ -107,7 +109,6 @@ def show(conn, c):
     # 7) Form
     with st.form("krovinio_forma", clear_on_submit=False):
         col1, col2 = st.columns(2)
-        # klientas selectbox
         opts = [""] + klientai_list
         idx = 0 if is_new else opts.index(cli.get("klientas", ""))
         klientas = col1.selectbox("Klientas", opts, index=idx)
@@ -178,7 +179,6 @@ def show(conn, c):
         elif not klientas or not uzsakymo_numeris:
             st.error("Privalomi laukai: Klientas ir Užsakymo numeris.")
         else:
-            # convert numbers
             km_val = int(km or 0)
             fr_val = float(fr or 0)
             sv_val = int(sv or 0)
@@ -189,15 +189,14 @@ def show(conn, c):
                     "pakrovimo_data, pakrovimo_laikas_nuo, pakrovimo_laikas_iki,"
                     "iskrovimo_data, iskrovimo_laikas_nuo, iskrovimo_laikas_iki,"
                     "pakrovimo_salis, pakrovimo_miestas, iskrovimo_salis, iskrovimo_miestas,"
-                    "vilkikas, priekaba, atsakingas_vadybininkas, kilometrai, frachtas, svoris, paleciu_skaicius, busena)"
-                    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "vilkikas, priekaba, atsakingas_vadybininkas, svoris, paleciu_skaicius)"
+                    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (
                         klientas, uzsakymo_numeris, pakrovimo_numeris,
                         str(pak_data), str(pk_nuo), str(pk_iki),
                         str(isk_data), str(is_nuo), str(is_iki),
                         pk_salis, pk_miestas, is_salis, is_miestas,
-                        vilkikas, priekaba, f"vadyb_{vilkikas.lower()}",
-                        km_val, fr_val, sv_val, pal_val, busena
+                        vilkikas, priekaba, f"vadyb_{vilkikas.lower()}", sv_val, pal_val
                     )
                 )
             else:
@@ -206,15 +205,14 @@ def show(conn, c):
                     "pakrovimo_data=?, pakrovimo_laikas_nuo=?, pakrovimo_laikas_iki=?,"
                     "iskrovimo_data=?, iskrovimo_laikas_nuo=?, iskrovimo_laikas_iki=?,"
                     "pakrovimo_salis=?, pakrovimo_miestas=?, iskrovimo_salis=?, iskrovimo_miestas=?,"
-                    "vilkikas=?, priekaba=?, atsakingas_vadybininkas=?, kilometrai=?, frachtas=?, svoris=?, paleciu_skaicius=?, busena=?"
+                    "vilkikas=?, priekaba=?, atsakingas_vadybininkas=?, svoris=?, paleciu_skaicius=?"
                     " WHERE id=?",
                     (
                         klientas, uzsakymo_numeris, pakrovimo_numeris,
                         str(pak_data), str(pk_nuo), str(pk_iki),
                         str(isk_data), str(is_nuo), str(is_iki),
                         pk_salis, pk_miestas, is_salis, is_miestas,
-                        vilkikas, priekaba, f"vadyb_{vilkikas.lower()}",
-                        km_val, fr_val, sv_val, pal_val, busena, sel
+                        vilkikas, priekaba, f"vadyb_{vilkikas.lower()}", sv_val, pal_val, sel
                     )
                 )
             conn.commit()

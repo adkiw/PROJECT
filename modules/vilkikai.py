@@ -48,6 +48,16 @@ def show(conn, c):
                 priek_num = priek.split(" ")[1]
             try:
                 c.execute(
+                    "ALTER TABLE vilkikai ADD COLUMN IF NOT EXISTS vin TEXT"
+                )
+                c.execute("ALTER TABLE vilkikai ADD COLUMN IF NOT EXISTS euro_klase TEXT")
+                c.execute("ALTER TABLE vilkikai ADD COLUMN IF NOT EXISTS draudimas TEXT")
+                c.execute("ALTER TABLE vilkikai ADD COLUMN IF NOT EXISTS busena TEXT")
+                c.execute("ALTER TABLE vilkikai ADD COLUMN IF NOT EXISTS paskutine_vieta TEXT")
+                c.execute("ALTER TABLE vilkikai ADD COLUMN IF NOT EXISTS kuro_lygis INTEGER")
+                c.execute("ALTER TABLE vilkikai ADD COLUMN IF NOT EXISTS technine_bukle TEXT")
+                conn.commit()
+                c.execute(
                     "INSERT INTO vilkikai (numeris, vin, marke, pagaminimo_metai, euro_klase, tech_apziura, draudimas, vadybininkas, vairuotojai, priekaba, busena, paskutine_vieta, kuro_lygis, technine_bukle)"
                     " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (numeris, vin or None, marke or None, metai or None, euro_klase or None,

@@ -29,7 +29,7 @@ def show(conn, c):
                 pass
 
     # 2. Formos atvaizdavimas
-    st.title("DISPO – Klientai")
+    st.title("Klientai")
     with st.form("klientai_forma", clear_on_submit=True):
         # Pavadinimas + VAT
         col1, col2 = st.columns(2)

@@ -4,26 +4,29 @@ import pandas as pd
 # modules/klientai.py
 
 def show(conn, c):
-    # 1. Ensure required columns exist in klientai table
+    # 1. Ensure required columns exist
     expected = {
-        'vat_numeris': 'TEXT',
-        'kontaktinis_asmuo': 'TEXT',
-        'kontaktinis_el_pastas': 'TEXT',
-        'kontaktinis_tel': 'TEXT',
-        'adresas': 'TEXT',
-        'saskaitos_asmuo': 'TEXT',
-        'saskaitos_el_pastas': 'TEXT',
-        'saskaitos_tel': 'TEXT',
-        'coface_limitas': 'REAL',
-        'musu_limitas': 'REAL',
-        'likes_limitas': 'REAL',
+        'vat_numeris':          'TEXT',
+        'kontaktinis_asmuo':    'TEXT',
+        'kontaktinis_el_pastas':'TEXT',
+        'kontaktinis_tel':      'TEXT',
+        'salis':                'TEXT',
+        'regionas':             'TEXT',
+        'miestas':              'TEXT',
+        'adresas':              'TEXT',
+        'saskaitos_asmuo':      'TEXT',
+        'saskaitos_el_pastas':  'TEXT',
+        'saskaitos_tel':        'TEXT',
+        'coface_limitas':       'REAL',
+        'musu_limitas':         'REAL',
+        'likes_limitas':        'REAL',
     }
     c.execute("PRAGMA table_info(klientai)")
-    existing = [row[1] for row in c.fetchall()]
-    for col, col_type in expected.items():
+    existing = [r[1] for r in c.fetchall()]
+    for col, typ in expected.items():
         if col not in existing:
             try:
-                c.execute(f"ALTER TABLE klientai ADD COLUMN {col} {col_type}")
+                c.execute(f"ALTER TABLE klientai ADD COLUMN {col} {typ}")
                 conn.commit()
             except:
                 pass
@@ -34,33 +37,62 @@ def show(conn, c):
     if 'selected_client' not in st.session_state:
         st.session_state.selected_client = None
 
-    # 3. Tabular list with Edit button
+    # 3. LIST VIEW (with filters + Add New)
     if st.session_state.selected_client is None:
-        df = pd.read_sql("SELECT id, pavadinimas, miestas, vat_numeris FROM klientai", conn)
+        c1, c2, c3 = st.columns([1,2,2])
+        with c1:
+            if st.button("➕ Pridėti naują klientą"):
+                st.session_state.selected_client = 0
+                st.experimental_rerun()
+        filter_name   = c2.text_input("Filtras: pavadinimas")
+        filter_region = c3.text_input("Filtras: regionas")
+
+        sql = """
+            SELECT 
+                id, pavadinimas, salis, regionas, miestas, 
+                musu_limitas AS limito_likutis
+            FROM klientai
+        """
+        params, conds = [], []
+        if filter_name:
+            conds.append("pavadinimas LIKE ?");   params.append(f"%{filter_name}%")
+        if filter_region:
+            conds.append("regionas LIKE ?");      params.append(f"%{filter_region}%")
+        if conds:
+            sql += " WHERE " + " AND ".join(conds)
+
+        df = pd.read_sql(sql, conn, params=params)
+
         # Header
-        cols_header = st.columns(len(df.columns) + 1)
-        for idx, col_name in enumerate(df.columns):
-            cols_header[idx].markdown(f"**{col_name}**")
-        cols_header[-1].markdown("**Veiksmai**")
+        hdr_cols = st.columns(len(df.columns)+1)
+        for i, colname in enumerate(df.columns):
+            hdr_cols[i].markdown(f"**{colname}**")
+        hdr_cols[-1].markdown("**Veiksmai**")
+
         # Rows
         for _, row in df.iterrows():
-            cols_row = st.columns(len(df.columns) + 1)
-            for idx, col_name in enumerate(df.columns):
-                cols_row[idx].write(row[col_name])
-            if cols_row[-1].button("✏️ Redaguoti", key=f"edit_{row['id']}"):
+            row_cols = st.columns(len(df.columns)+1)
+            for i, colname in enumerate(df.columns):
+                row_cols[i].write(row[colname])
+            if row_cols[-1].button("✏️", key=f"edit_{row['id']}"):
                 st.session_state.selected_client = row['id']
-        return  # back to top
-
-    # 4. Detail/edit form
-    sel_id = st.session_state.selected_client
-    df_cli = pd.read_sql("SELECT * FROM klientai WHERE id=?", conn, params=(sel_id,))
-    if df_cli.empty:
-        st.error("Klientas nerastas.")
-        st.session_state.selected_client = None
+                st.experimental_rerun()
         return
-    cli = df_cli.iloc[0]
 
-    # Editable fields: (label, key)
+    # 4. DETAIL / NEW FORM
+    sel = st.session_state.selected_client
+    is_new = (sel == 0)
+    if not is_new:
+        df_cli = pd.read_sql("SELECT * FROM klientai WHERE id=?", conn, params=(sel,))
+        if df_cli.empty:
+            st.error("Klientas nerastas.")
+            st.session_state.selected_client = None
+            return
+        cli = df_cli.iloc[0]
+    else:
+        cli = {}
+
+    # 5. Form fields
     fields = [
         ("Įmonės pavadinimas",        "pavadinimas"),
         ("PVM/VAT numeris",           "vat_numeris"),
@@ -78,36 +110,37 @@ def show(conn, c):
         ("Mūsų limitas",              "musu_limitas"),
         ("Likes limitas",             "likes_limitas"),
     ]
-    limit_keys = {"coface_limitas", "musu_limitas", "likes_limitas"}
+    limit_keys = {"coface_limitas","musu_limitas","likes_limitas"}
 
-    with st.form("edit_form", clear_on_submit=False):
-        # Layout in rows of 3
-        for i in range(0, len(fields), 3):
-            cols = st.columns(3)
-            for j, (label, key) in enumerate(fields[i:i+3]):
-                value = cli[key]
-                cols[j].text_input(label, key=key, value=str(value))
+    # 6. Render inputs (3 per row)
+    for i in range(0, len(fields), 3):
+        cols = st.columns(3)
+        for j,(label,key) in enumerate(fields[i:i+3]):
+            default = "" if is_new else cli[key]
+            cols[j].text_input(label, key=key, value=str(default))
 
-        # Buttons
-        col_upd, col_back = st.columns(2)
-        upd = col_upd.form_submit_button("💾 Atnaujinti klientą")
-        back = col_back.form_submit_button("🔙 Grįžti į sąrašą")
-
-        if upd:
-            vals = []
-            for _, key in fields:
-                v = st.session_state[key]
-                if key in limit_keys:
-                    v = float(v) if v else 0.0
-                vals.append(v)
-            vals.append(sel_id)
-            set_clause = ", ".join(f"{key}=?" for _, key in fields)
+    # 7. Save / Back
+    b1, b2 = st.columns(2)
+    if b1.button("💾 Išsaugoti klientą"):
+        vals = []
+        for _, key in fields:
+            v = st.session_state[key]
+            if key in limit_keys:
+                v = float(v) if v else 0.0
+            vals.append(v)
+        if is_new:
+            cols_sql     = ", ".join(k for _,k in fields)
+            placeholders = ", ".join("?" for _ in fields)
+            c.execute(f"INSERT INTO klientai ({cols_sql}) VALUES ({placeholders})", tuple(vals))
+        else:
+            vals.append(sel)
+            set_clause = ", ".join(f"{k}=?" for _,k in fields)
             c.execute(f"UPDATE klientai SET {set_clause} WHERE id=?", tuple(vals))
-            conn.commit()
-            st.success("✅ Klientas atnaujintas.")
-            st.session_state.selected_client = None
-            return
+        conn.commit()
+        st.success("✅ Duomenys išsaugoti.")
+        st.session_state.selected_client = None
+        st.experimental_rerun()
 
-        if back:
-            st.session_state.selected_client = None
-            return
+    if b2.button("🔙 Grįžti į sąrašą"):
+        st.session_state.selected_client = None
+        st.experimental_rerun()

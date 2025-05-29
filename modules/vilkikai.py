@@ -1,3 +1,5 @@
+# modules/vilkikai.py
+
 import streamlit as st
 import pandas as pd
 from datetime import date
@@ -47,7 +49,9 @@ def show(conn, c):
             st.warning("⚠️ Įveskite vilkiko numerį.")
         else:
             vairuotojai = ", ".join(filter(None, [vair1, vair2])) or None
-            priek_num = priek.split()[1] if priek and priek.startswith(("🟢","🔴")) else None
+            priek_num = None
+            if priek.startswith(("🟢","🔴")):
+                priek_num = priek.split()[1]
             try:
                 c.execute(
                     "INSERT INTO vilkikai (numeris, marke, pagaminimo_metai, tech_apziura, draudimas, vadybininkas, vairuotojai, priekaba)"
@@ -55,9 +59,9 @@ def show(conn, c):
                     (
                         numeris,
                         marke or None,
-                        pirm_reg.isoformat()       if pirm_reg else None,
-                        tech_apz_date.isoformat()  if tech_apz_date else None,
-                        draudimo_date.isoformat()  if draudimo_date else None,
+                        pirm_reg.isoformat()      if pirm_reg else None,
+                        tech_apz_date.isoformat() if tech_apz_date else None,
+                        draudimo_date.isoformat() if draudimo_date else None,
                         vadyb or None,
                         vairuotojai,
                         priek_num
@@ -67,7 +71,7 @@ def show(conn, c):
                 st.success("✅ Vilkikas išsaugotas sėkmingai.")
                 if tech_apz_date:
                     days_t = (tech_apz_date - date.today()).days
-                    st.info(f"🔧 Dienų iki techninės apžiūros liko: {days_t}")
+                    st.info(f"🔧 Dienų iki tech. apžiūros liko: {days_t}")
                 if draudimo_date:
                     days_d = (draudimo_date - date.today()).days
                     st.info(f"🛡️ Dienų iki draudimo pabaigos liko: {days_d}")
@@ -85,16 +89,16 @@ def show(conn, c):
             pr_opts.append(
                 f"🔴 {num} ({', '.join(assigned)})" if assigned else f"🟢 {num} (laisva)"
             )
-        sel_vilk    = st.selectbox("Pasirinkite vilkiką", vilk_list)
-        sel_priek   = st.selectbox("Pasirinkite priekabą", pr_opts)
-        upd         = st.form_submit_button("💾 Išsaugoti")
+        sel_vilk  = st.selectbox("Pasirinkite vilkiką", vilk_list)
+        sel_priek = st.selectbox("Pasirinkite priekabą", pr_opts)
+        upd       = st.form_submit_button("💾 Išsaugoti")
     if upd and sel_vilk:
         num = sel_priek.split()[1] if sel_priek and sel_priek.startswith(("🟢","🔴")) else None
         c.execute("UPDATE vilkikai SET priekaba = ? WHERE numeris = ?", (num, sel_vilk))
         conn.commit()
         st.success(f"✅ Priekaba {num or '(tuščia)'} priskirta {sel_vilk}.")
 
-    # 6) Vilkikų sąrašas su CSV eksportu
+    # 6) Vilkikų sąrašas su CSV eksportu (semicolon delimiter)
     st.subheader("📋 Vilkikų sąrašas")
     query = '''
         SELECT
@@ -113,10 +117,10 @@ def show(conn, c):
     if df.empty:
         st.info("🔍 Kol kas nėra vilkikų.")
     else:
-        df['dienu_liko_tech']   = df['tech_apziuros_pabaiga'].apply(lambda x: (date.fromisoformat(x) - date.today()).days if x else None)
-        df['dienu_liko_draud']  = df['draudimo_galiojimas'].apply(lambda x: (date.fromisoformat(x) - date.today()).days if x else None)
+        df['dienu_liko_tech']  = df['tech_apziuros_pabaiga'].apply(lambda x: (date.fromisoformat(x)-date.today()).days if x else None)
+        df['dienu_liko_draud'] = df['draudimo_galiojimas'].apply(lambda x: (date.fromisoformat(x)-date.today()).days if x else None)
         st.dataframe(df, use_container_width=True)
-        csv = df.to_csv(index=False).encode('utf-8')
+        csv = df.to_csv(index=False, sep=';').encode('utf-8')
         st.download_button(
             label="💾 Eksportuoti kaip CSV",
             data=csv,

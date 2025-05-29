@@ -30,33 +30,37 @@ def show(conn, c):
 
     st.title("DISPO – Klientai")
 
-    # 2. Selection state for editing
+    # 2. Selection state
     if 'selected_client' not in st.session_state:
         st.session_state.selected_client = None
 
-    # 3. Card grid view
+    # 3. Tabular list with Edit button
     if st.session_state.selected_client is None:
         df = pd.read_sql("SELECT id, pavadinimas, miestas, vat_numeris FROM klientai", conn)
-        cols_per_row = 4
-        cols = st.columns(cols_per_row)
-        for idx, row in df.iterrows():
-            col = cols[idx % cols_per_row]
-            with col:
-                st.markdown(f"**{row['pavadinimas']}**")
-                st.text(f"{row['miestas']} | VAT: {row['vat_numeris']}")
-                if st.button("✏️ Redaguoti", key=f"edit_{row['id']}"):
-                    st.session_state.selected_client = row['id']
-        return  # stop here
+        # Header
+        cols_header = st.columns(len(df.columns) + 1)
+        for idx, col_name in enumerate(df.columns):
+            cols_header[idx].markdown(f"**{col_name}**")
+        cols_header[-1].markdown("**Veiksmai**")
+        # Rows
+        for _, row in df.iterrows():
+            cols_row = st.columns(len(df.columns) + 1)
+            for idx, col_name in enumerate(df.columns):
+                cols_row[idx].write(row[col_name])
+            if cols_row[-1].button("✏️ Redaguoti", key=f"edit_{row['id']}"):
+                st.session_state.selected_client = row['id']
+        return  # back to top
 
-    # 4. Detail/edit form view
+    # 4. Detail/edit form
     sel_id = st.session_state.selected_client
     df_cli = pd.read_sql("SELECT * FROM klientai WHERE id=?", conn, params=(sel_id,))
     if df_cli.empty:
         st.error("Klientas nerastas.")
+        st.session_state.selected_client = None
         return
     cli = df_cli.iloc[0]
 
-    # Fields: (label, column key)
+    # Editable fields: (label, key)
     fields = [
         ("Įmonės pavadinimas",        "pavadinimas"),
         ("PVM/VAT numeris",           "vat_numeris"),
@@ -77,20 +81,19 @@ def show(conn, c):
     limit_keys = {"coface_limitas", "musu_limitas", "likes_limitas"}
 
     with st.form("edit_form", clear_on_submit=False):
-        # Layout inputs in rows of 3
+        # Layout in rows of 3
         for i in range(0, len(fields), 3):
-            cols_row = st.columns(3)
+            cols = st.columns(3)
             for j, (label, key) in enumerate(fields[i:i+3]):
                 value = cli[key]
-                cols_row[j].text_input(label, key=key, value=str(value))
+                cols[j].text_input(label, key=key, value=str(value))
 
-        # Buttons: update or back
-        col_update, col_back = st.columns(2)
-        update_clicked = col_update.form_submit_button("💾 Atnaujinti klientą")
-        back_clicked   = col_back.form_submit_button("🔙 Grįžti")
+        # Buttons
+        col_upd, col_back = st.columns(2)
+        upd = col_upd.form_submit_button("💾 Atnaujinti klientą")
+        back = col_back.form_submit_button("🔙 Grįžti į sąrašą")
 
-        if update_clicked:
-            # Collect updated values
+        if upd:
             vals = []
             for _, key in fields:
                 v = st.session_state[key]
@@ -99,13 +102,12 @@ def show(conn, c):
                 vals.append(v)
             vals.append(sel_id)
             set_clause = ", ".join(f"{key}=?" for _, key in fields)
-            sql = f"UPDATE klientai SET {set_clause} WHERE id=?"
-            c.execute(sql, tuple(vals))
+            c.execute(f"UPDATE klientai SET {set_clause} WHERE id=?", tuple(vals))
             conn.commit()
             st.success("✅ Klientas atnaujintas.")
             st.session_state.selected_client = None
             return
 
-        if back_clicked:
+        if back:
             st.session_state.selected_client = None
             return

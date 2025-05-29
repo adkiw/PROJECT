@@ -57,168 +57,130 @@ def show(conn, c):
     # 5) List view
     if st.session_state.selected_cargo is None:
         df = pd.read_sql_query("SELECT * FROM kroviniai", conn)
+        # drop unwanted columns
+        df = df.drop(columns=[
+            'pakrovimo_numeris',
+            'pakrovimo_laikas_nuo',
+            'pakrovimo_laikas_iki',
+            'iskrovimo_laikas_nuo',
+            'iskrovimo_laikas_iki',
+            'svoris',
+            'paleciu_skaicius'
+        ], errors='ignore')
         if df.empty:
             st.info("Kol kas nėra krovinių.")
-        else:
-            # filters row above headers
-            cols_f = st.columns(len(df.columns) + 1)
-            for i, col in enumerate(df.columns):
-                cols_f[i].text_input(f"🔍 {col}", key=f"f_{col}")
-            cols_f[-1].write("")
-            # apply filters
-            for col in df.columns:
-                val = st.session_state.get(f"f_{col}", "")
-                if val:
-                    df = df[df[col].astype(str).str.contains(val, case=False, na=False)]
-            # headers
-            hdr = st.columns(len(df.columns) + 1)
-            for i, col in enumerate(df.columns): hdr[i].markdown(f"**{col}**")
-            hdr[-1].markdown("**Veiksmai**")
-            # rows
-            for _, row in df.iterrows():
-                row_cols = st.columns(len(df.columns) + 1)
-                for i, col in enumerate(df.columns): row_cols[i].write(row[col])
-                row_cols[-1].button(
-                    "✏️", key=f"edit_{row['id']}",
-                    on_click=start_edit, args=(row['id'],)
-                )
-            # CSV export
-            csv = df.to_csv(index=False, sep=';').encode('utf-8')
-            st.download_button(
-                label="💾 Eksportuoti kaip CSV",
-                data=csv,
-                file_name="kroviniai.csv",
-                mime="text/csv"
+            return
+        # filters row above headers, single line
+        cols_f = st.columns(len(df.columns) + 1)
+        for i, col in enumerate(df.columns):
+            cols_f[i].text_input(col, key=f"f_{col}")
+        cols_f[-1].write("")
+        # apply filters
+        for col in df.columns:
+            val = st.session_state.get(f"f_{col}", "")
+            if val:
+                df = df[df[col].astype(str).str.contains(val, case=False, na=False)]
+        # headers
+        hdr = st.columns(len(df.columns) + 1)
+        for i, col in enumerate(df.columns): hdr[i].markdown(f"**{col}**")
+        hdr[-1].markdown("**Veiksmai**")
+        # rows
+        for _, row in df.iterrows():
+            row_cols = st.columns(len(df.columns) + 1)
+            for i, col in enumerate(df.columns): row_cols[i].write(row[col])
+            row_cols[-1].button(
+                "✏️", key=f"edit_{row['id']}", on_click=start_edit, args=(row['id'],)
             )
+        # CSV export
+        csv = df.to_csv(index=False, sep=';').encode('utf-8')
+        st.download_button(label="💾 Eksportuoti CSV", data=csv, file_name="kroviniai.csv", mime="text/csv")
         return
 
     # 6) Detail / New Form view
     sel = st.session_state.selected_cargo
     is_new = (sel == 0)
-    cli = {}
+    record = {}
     if not is_new:
-        df_cli = pd.read_sql_query("SELECT * FROM kroviniai WHERE id=?", conn, params=(sel,))
-        if df_cli.empty:
+        df_rec = pd.read_sql_query("SELECT * FROM kroviniai WHERE id=?", conn, params=(sel,))
+        if df_rec.empty:
             st.error("Įrašas nerastas.")
             clear_selection()
             return
-        cli = df_cli.iloc[0]
+        record = df_rec.iloc[0]
 
     # 7) Form
     with st.form("krovinio_forma", clear_on_submit=False):
-        col1, col2 = st.columns(2)
-        # klientas selectbox
-        opts = [""] + klientai_list
-        idx = 0 if is_new else opts.index(cli.get("klientas", ""))
-        klientas = col1.selectbox("Klientas", opts, index=idx)
-        uzsakymo_numeris = col2.text_input(
-            "Užsakymo numeris", value=("" if is_new else cli.get("uzsakymo_numeris", ""))
-        )
-        pakrovimo_numeris = col1.text_input(
-            "Pakrovimo numeris", value=("" if is_new else cli.get("pakrovimo_numeris", ""))
-        )
-
-        col3, col4 = st.columns(2)
-        pak_data = col3.date_input(
-            "Pakrovimo data", value=(date.today() if is_new else pd.to_datetime(cli["pakrovimo_data"]).date())
-        )
-        pk_nuo = col3.time_input(
-            "Laikas nuo (pakrovimas)", value=(time(8,0) if is_new else pd.to_datetime(cli["pakrovimo_laikas_nuo"]).time())
-        )
-        pk_iki = col3.time_input(
-            "Laikas iki (pakrovimas)", value=(time(17,0) if is_new else pd.to_datetime(cli["pakrovimo_laikas_iki"]).time())
-        )
-        isk_data = col4.date_input(
-            "Iškrovimo data", value=(pak_data + timedelta(days=1) if is_new else pd.to_datetime(cli["iskrovimo_data"]).date())
-        )
-        is_nuo = col4.time_input(
-            "Laikas nuo (iškrovimas)", value=(time(8,0) if is_new else pd.to_datetime(cli["iskrovimo_laikas_nuo"]).time())
-        )
-        is_iki = col4.time_input(
-            "Laikas iki (iškrovimas)", value=(time(17,0) if is_new else pd.to_datetime(cli["iskrovimo_laikas_iki"]).time())
-        )
-
-        col5, col6 = st.columns(2)
-        pk_salis = col5.text_input(
-            "Pakrovimo šalis", value=("" if is_new else cli.get("pakrovimo_salis", ""))
-        )
-        pk_miestas = col5.text_input(
-            "Pakrovimo miestas", value=("" if is_new else cli.get("pakrovimo_miestas", ""))
-        )
-        is_salis = col6.text_input(
-            "Iškrovimo šalis", value=("" if is_new else cli.get("iskrovimo_salis", ""))
-        )
-        is_miestas = col6.text_input(
-            "Iškrovimo miestas", value=("" if is_new else cli.get("iskrovimo_miestas", ""))
-        )
-
-        col7, col8 = st.columns(2)
+        # row1
+        c1, c2, c3 = st.columns(3)
+        opts_k = [""] + klientai_list
+        idx_k = 0 if is_new else opts_k.index(record.get("klientas","")) if record.get("klientas","") in opts_k else 0
+        klientas = c1.selectbox("Klientas", opts_k, index=idx_k)
+        uzsak_nr = c2.text_input("Užsakymo numeris", value=("" if is_new else record.get("uzsakymo_numeris","")))
+        pak_data  = c1.date_input("Pakrovimo data", value=(date.today() if is_new else pd.to_datetime(record["pakrovimo_data"]).date()))
+        # row2
+        c4, c5 = st.columns(2)
+        isk_data = c4.date_input("Iškrovimo data", value=((pak_data+timedelta(days=1)) if is_new else pd.to_datetime(record["iskrovimo_data"]).date()))
+        # row3
+        c6, c7 = st.columns(2)
+        pk_country = c6.text_input("Pakrovimo šalis", value=("" if is_new else record.get("pakrovimo_salis","")))
+        is_country = c7.text_input("Iškrovimo šalis", value=("" if is_new else record.get("iskrovimo_salis","")))
+        # row4
+        c8, c9 = st.columns(2)
         opts_v = [""] + vilkikai_list
-        vidx = 0 if is_new else opts_v.index(cli.get("vilkikas", ""))
-        vilkikas = col7.selectbox("Vilkikas", opts_v, index=vidx)
-        priekaba = cli.get("priekaba", "") if not is_new else ""
-        col8.text_input("Priekaba", value=priekaba, disabled=True)
+        idx_v = 0 if is_new else opts_v.index(record.get("vilkikas","")) if record.get("vilkikas","") in opts_v else 0
+        vilkikas = c8.selectbox("Vilkikas", opts_v, index=idx_v)
+        priekaba = record.get("priekaba","") if not is_new else ""
+        c9.text_input("Priekaba", value=priekaba, disabled=True)
+        # row5
+        c10, c11 = st.columns(2)
+        km      = c10.text_input("Kilometrai", value=("" if is_new else str(record.get("kilometrai",""))))
+        fracht  = c11.text_input("Frachtas (€)", value=("" if is_new else str(record.get("frachtas",""))))
+        # row6
+        idx_b   = 0 if is_new else busena_opt.index(record.get("busena","")) if record.get("busena","") in busena_opt else 0
+        busena  = st.selectbox("Būsena", busena_opt, index=idx_b)
+        # buttons
+        sb, bb = st.columns(2)
+        ok = sb.form_submit_button("📅 Išsaugoti")
+        back = bb.form_submit_button("🔙 Grįžti")
 
-        col9, col10, col11, col12 = st.columns(4)
-        km = col9.text_input("Kilometrai", value=("" if is_new else str(cli.get("kilometrai", ""))))
-        fr = col10.text_input("Frachtas (€)", value=("" if is_new else str(cli.get("frachtas", ""))))
-        sv = col11.text_input("Svoris (kg)", value=("" if is_new else str(cli.get("svoris", ""))))
-        pal = col12.text_input("Padėklų skaičius", value=("" if is_new else str(cli.get("paleciu_skaicius", ""))))
-
-        bus_idx = 0 if is_new else busena_opt.index(cli.get("busena", ""))
-        busena = st.selectbox("Būsena", busena_opt, index=bus_idx)
-
-        submit = st.form_submit_button("📅 Išsaugoti krovinį")
-        back = st.form_submit_button("🔙 Grįžti į sąrašą")
-
-    # 8) Handle form submit/back
-    if submit:
+    # 8) Handle form
+    if ok:
         if pak_data > isk_data:
-            st.error("Pakrovimo data negali būti vėlesnė už iškrovimo datą.")
-        elif not klientas or not uzsakymo_numeris:
-            st.error("Privalomi laukai: Klientas ir Užsakymo numeris.")
+            st.error("Pakrovimo data vėlesnė nei iškrovimo.")
+        elif not klientas or not uzsak_nr:
+            st.error("Privalomi: klientas, užsakymo nr.")
         else:
-            # convert numbers
-            km_val = int(km or 0)
-            fr_val = float(fr or 0)
-            sv_val = int(sv or 0)
-            pal_val = int(pal or 0)
+            km_val   = int(km or 0)
+            fr_val   = float(fracht or 0)
             if is_new:
-                c.execute(
-                    "INSERT INTO kroviniai (klientas, uzsakymo_numeris, pakrovimo_numeris,"
-                    "pakrovimo_data, pakrovimo_laikas_nuo, pakrovimo_laikas_iki,"
-                    "iskrovimo_data, iskrovimo_laikas_nuo, iskrovimo_laikas_iki,"
-                    "pakrovimo_salis, pakrovimo_miestas, iskrovimo_salis, iskrovimo_miestas,"
-                    "vilkikas, priekaba, atsakingas_vadybininkas, kilometrai, frachtas, svoris, paleciu_skaicius, busena)"
-                    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    (
-                        klientas, uzsakymo_numeris, pakrovimo_numeris,
-                        str(pak_data), str(pk_nuo), str(pk_iki),
-                        str(isk_data), str(is_nuo), str(is_iki),
-                        pk_salis, pk_miestas, is_salis, is_miestas,
-                        vilkikas, priekaba, f"vadyb_{vilkikas.lower()}",
-                        km_val, fr_val, sv_val, pal_val, busena
-                    )
-                )
+                cols = [
+                    "klientas","uzsakymo_numeris","pakrovimo_data","iskrovimo_data",
+                    "pakrovimo_salis","iskrovimo_salis","vilkikas","priekaba",
+                    "atsakingas_vadybininkas","kilometrai","frachtas","busena"
+                ]
+                ph = ", ".join("?" for _ in cols)
+                sql = f"INSERT INTO kroviniai ({','.join(cols)}) VALUES ({ph})"
+                params = [
+                    klientas, uzsak_nr, str(pak_data), str(isk_data),
+                    pk_country, is_country, vilkikas, priekaba,
+                    f"vadyb_{vilkikas.lower()}", km_val, fr_val, busena
+                ]
+                c.execute(sql, tuple(params))
             else:
-                c.execute(
-                    "UPDATE kroviniai SET klientas=?, uzsakymo_numeris=?, pakrovimo_numeris=?,"
-                    "pakrovimo_data=?, pakrovimo_laikas_nuo=?, pakrovimo_laikas_iki=?,"
-                    "iskrovimo_data=?, iskrovimo_laikas_nuo=?, iskrovimo_laikas_iki=?,"
-                    "pakrovimo_salis=?, pakrovimo_miestas=?, iskrovimo_salis=?, iskrovimo_miestas=?,"
-                    "vilkikas=?, priekaba=?, atsakingas_vadybininkas=?, kilometrai=?, frachtas=?, svoris=?, paleciu_skaicius=?, busena=?"
-                    " WHERE id=?",
-                    (
-                        klientas, uzsakymo_numeris, pakrovimo_numeris,
-                        str(pak_data), str(pk_nuo), str(pk_iki),
-                        str(isk_data), str(is_nuo), str(is_iki),
-                        pk_salis, pk_miestas, is_salis, is_miestas,
-                        vilkikas, priekaba, f"vadyb_{vilkikas.lower()}",
-                        km_val, fr_val, sv_val, pal_val, busena, sel
-                    )
-                )
+                set_clause = ", ".join(f"{col}=?" for col in [
+                    "klientas","uzsakymo_numeris","pakrovimo_data","iskrovimo_data",
+                    "pakrovimo_salis","iskrovimo_salis","vilkikas","priekaba",
+                    "atsakingas_vadybininkas","kilometrai","frachtas","busena"
+                ])
+                sql = f"UPDATE kroviniai SET {set_clause} WHERE id=?"
+                params = [
+                    klientas, uzsak_nr, str(pak_data), str(isk_data),
+                    pk_country, is_country, vilkikas, priekaba,
+                    f"vadyb_{vilkikas.lower()}", km_val, fr_val, busena, sel
+                ]
+                c.execute(sql, tuple(params))
             conn.commit()
-            st.success("✅ Krovinys išsaugotas.")
+            st.success("Krovinys išsaugotas.")
             clear_selection()
-    elif back:
+    if back:
         clear_selection()

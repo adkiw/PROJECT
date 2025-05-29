@@ -1,25 +1,25 @@
+# modules/klientai.py
+
 import streamlit as st
 import pandas as pd
 
-# modules/klientai.py
-
 def show(conn, c):
-    # 1. Ensure required columns exist
+    # 1. Užtikriname, kad visi būtini stulpeliai egzistuoja
     expected = {
-        'vat_numeris': 'TEXT',
-        'kontaktinis_asmuo': 'TEXT',
-        'kontaktinis_el_pastas': 'TEXT',
-        'kontaktinis_tel': 'TEXT',
-        'salis': 'TEXT',
-        'regionas': 'TEXT',
-        'miestas': 'TEXT',
-        'adresas': 'TEXT',
-        'saskaitos_asmuo': 'TEXT',
-        'saskaitos_el_pastas': 'TEXT',
-        'saskaitos_tel': 'TEXT',
-        'coface_limitas': 'REAL',
-        'musu_limitas': 'REAL',
-        'likes_limitas': 'REAL',
+        'vat_numeris':          'TEXT',
+        'kontaktinis_asmuo':    'TEXT',
+        'kontaktinis_el_pastas':'TEXT',
+        'kontaktinis_tel':      'TEXT',
+        'salis':                'TEXT',
+        'regionas':             'TEXT',
+        'miestas':              'TEXT',
+        'adresas':              'TEXT',
+        'saskaitos_asmuo':      'TEXT',
+        'saskaitos_el_pastas':  'TEXT',
+        'saskaitos_tel':        'TEXT',
+        'coface_limitas':       'REAL',
+        'musu_limitas':         'REAL',
+        'likes_limitas':        'REAL',
     }
     c.execute("PRAGMA table_info(klientai)")
     existing = [r[1] for r in c.fetchall()]
@@ -30,6 +30,8 @@ def show(conn, c):
                 conn.commit()
             except:
                 pass
+
+    st.title("DISPO – Klientai")
 
     # 2. Callbacks
     def clear_selection():
@@ -63,64 +65,60 @@ def show(conn, c):
         st.success("✅ Duomenys išsaugoti.")
         clear_selection()
 
-    # 3. Initialize state
+    # 3. Inicijuojame būsena
     if 'selected_client' not in st.session_state:
         st.session_state.selected_client = None
 
-    # 4. LIST VIEW with filters and Add New button aligned with title
+    # 4. SĄRAŠO RODINYS su dinaminiais filtrais
     if st.session_state.selected_client is None:
-        # Title and Add New
-        title_col, button_col = st.columns([8,2])
-        title_col.markdown("# DISPO – Klientai")
-        button_col.button("➕ Pridėti naują klientą", on_click=start_new)
-
-        # Load data
+        # Pasiimame lentelę
         df = pd.read_sql(
-            """
-            SELECT id, pavadinimas, salis, regionas, miestas,
-                   musu_limitas AS limito_likutis
-            FROM klientai
-            """,
+            """SELECT id, pavadinimas, salis, regionas, miestas, 
+                      musu_limitas AS limito_likutis
+               FROM klientai""",
             conn
         )
 
-        # Filters row (aligned above columns)
-        filter_cols = st.columns(len(df.columns) + 1)
+        # Viršuje mygtukas naujam ir filtreiai
+        cols_top = st.columns([1] + [1]*len(df.columns))
+        cols_top[0].button("➕ Pridėti naują klientą", on_click=start_new)
+        # Dinaminiai filtrai pagal kiekvieną stulpelį
+        filters = {}
         for i, col_name in enumerate(df.columns):
-            filter_cols[i].text_input(f"🔍 {col_name}", key=f"f_{col_name}")
-        # leave last column blank
-
-        # Apply filters
+            filters[col_name] = cols_top[i+1].text_input(
+                f"🔍 {col_name}", key=f"f_{col_name}"
+            )
+        # Pritaikome filtrus
         df_filtered = df.copy()
-        for col_name in df.columns:
-            val = st.session_state.get(f"f_{col_name}", "")
+        for col_name, val in filters.items():
             if val:
                 df_filtered = df_filtered[
                     df_filtered[col_name].astype(str)
                                .str.contains(val, case=False, na=False)
                 ]
 
-        # Table header with action column
-        hdr = st.columns(len(df_filtered.columns) + 1)
+        # Atvaizduojame lentelę su mygtuku paskutinėje kolonoje
+        header_cols = st.columns(len(df_filtered.columns) + 1)
         for i, cname in enumerate(df_filtered.columns):
-            hdr[i].markdown(f"**{cname}**")
-        hdr[-1].markdown("**Veiksmai**")
+            header_cols[i].markdown(f"**{cname}**")
+        header_cols[-1].markdown("**Veiksmai**")
 
-        # Table rows
         for _, row in df_filtered.iterrows():
             row_cols = st.columns(len(df_filtered.columns) + 1)
             for i, cname in enumerate(df_filtered.columns):
                 row_cols[i].write(row[cname])
             row_cols[-1].button(
-                "✏️", key=f"edit_{row['id']}",
-                on_click=start_edit, args=(row['id'],)
+                "✏️",
+                key=f"edit_{row['id']}",
+                on_click=start_edit,
+                args=(row['id'],)
             )
         return
 
-    # 5. DETAIL / NEW FORM
-    sel    = st.session_state.selected_client
-    is_new = (sel == 0)
-    cli    = {}
+    # 5. FORMA (naujas arba redagavimas)
+    sel     = st.session_state.selected_client
+    is_new  = (sel == 0)
+    cli     = {}
     if not is_new:
         df_cli = pd.read_sql("SELECT * FROM klientai WHERE id=?", conn, params=(sel,))
         if df_cli.empty:
@@ -129,7 +127,7 @@ def show(conn, c):
             return
         cli = df_cli.iloc[0]
 
-    # 6. Form fields
+    # 6. Laukai formoje
     fields = [
         ("Įmonės pavadinimas",        "pavadinimas"),
         ("PVM/VAT numeris",           "vat_numeris"),
@@ -149,14 +147,20 @@ def show(conn, c):
     ]
     limit_keys = {"coface_limitas","musu_limitas","likes_limitas"}
 
-    # Render inputs 3 per row
+    # Renderinam po 3 stulpelius
     for i in range(0, len(fields), 3):
-        cols = st.columns(3)
+        row_cols = st.columns(3)
         for j, (label, key) in enumerate(fields[i:i+3]):
             default = "" if is_new else cli.get(key, "")
-            cols[j].text_input(label, key=key, value=str(default))
+            row_cols[j].text_input(label, key=key, value=str(default))
 
-    # Save / Back buttons
-    b1, b2 = st.columns(2)
-    b1.button("💾 Išsaugoti klientą", on_click=do_save)
-    b2.button("🔙 Grįžti į sąrašą", on_click=clear_selection)
+    # Mygtukai apačioje
+    btn_cols = st.columns(2)
+    btn_cols[0].button(
+        "💾 Išsaugoti klientą",
+        on_click=do_save
+    )
+    btn_cols[1].button(
+        "🔙 Grįžti į sąrašą",
+        on_click=clear_selection
+    )

@@ -1,25 +1,25 @@
+# modules/klientai.py
+
 import streamlit as st
 import pandas as pd
-
-# modules/klientai.py
 
 def show(conn, c):
     # 1. Ensure required columns exist
     expected = {
-        'vat_numeris':          'TEXT',
-        'kontaktinis_asmuo':    'TEXT',
-        'kontaktinis_el_pastas':'TEXT',
-        'kontaktinis_tel':      'TEXT',
-        'salis':                'TEXT',
-        'regionas':             'TEXT',
-        'miestas':              'TEXT',
-        'adresas':              'TEXT',
-        'saskaitos_asmuo':      'TEXT',
-        'saskaitos_el_pastas':  'TEXT',
-        'saskaitos_tel':        'TEXT',
-        'coface_limitas':       'REAL',
-        'musu_limitas':         'REAL',
-        'likes_limitas':        'REAL',
+        'vat_numeris': 'TEXT',
+        'kontaktinis_asmuo': 'TEXT',
+        'kontaktinis_el_pastas': 'TEXT',
+        'kontaktinis_tel': 'TEXT',
+        'salis': 'TEXT',
+        'regionas': 'TEXT',
+        'miestas': 'TEXT',
+        'adresas': 'TEXT',
+        'saskaitos_asmuo': 'TEXT',
+        'saskaitos_el_pastas': 'TEXT',
+        'saskaitos_tel': 'TEXT',
+        'coface_limitas': 'REAL',
+        'musu_limitas': 'REAL',
+        'likes_limitas': 'REAL',
     }
     c.execute("PRAGMA table_info(klientai)")
     existing = [r[1] for r in c.fetchall()]
@@ -33,24 +33,32 @@ def show(conn, c):
 
     st.title("DISPO – Klientai")
 
-    # 2. Selection state
+    # Callbacks
+    def clear_selection():
+        st.session_state.selected_client = None
+
+    def start_new():
+        st.session_state.selected_client = 0
+
+    def start_edit(client_id):
+        st.session_state.selected_client = client_id
+
+    # 2. Initialize selection state
     if 'selected_client' not in st.session_state:
         st.session_state.selected_client = None
 
-    # 3. LIST VIEW (with filters + Add New)
+    # 3. LIST VIEW
     if st.session_state.selected_client is None:
-        c1, c2, c3 = st.columns([1,2,2])
-        with c1:
-            if st.button("➕ Pridėti naują klientą"):
-                st.session_state.selected_client = 0
-                st.experimental_rerun()
+        # Top controls
+        c1, c2, c3 = st.columns([1, 2, 2])
+        c1.button("➕ Pridėti naują klientą", on_click=start_new)
         filter_name   = c2.text_input("Filtras: pavadinimas")
         filter_region = c3.text_input("Filtras: regionas")
 
+        # Query
         sql = """
-            SELECT 
-                id, pavadinimas, salis, regionas, miestas, 
-                musu_limitas AS limito_likutis
+            SELECT id, pavadinimas, salis, regionas, miestas,
+                   musu_limitas AS limito_likutis
             FROM klientai
         """
         params, conds = [], []
@@ -64,35 +72,37 @@ def show(conn, c):
         df = pd.read_sql(sql, conn, params=params)
 
         # Header
-        hdr_cols = st.columns(len(df.columns)+1)
+        hdr = st.columns(len(df.columns) + 1)
         for i, colname in enumerate(df.columns):
-            hdr_cols[i].markdown(f"**{colname}**")
-        hdr_cols[-1].markdown("**Veiksmai**")
+            hdr[i].markdown(f"**{colname}**")
+        hdr[-1].markdown("**Veiksmai**")
 
         # Rows
         for _, row in df.iterrows():
-            row_cols = st.columns(len(df.columns)+1)
+            row_cols = st.columns(len(df.columns) + 1)
             for i, colname in enumerate(df.columns):
                 row_cols[i].write(row[colname])
-            if row_cols[-1].button("✏️", key=f"edit_{row['id']}"):
-                st.session_state.selected_client = row['id']
-                st.experimental_rerun()
+            row_cols[-1].button(
+                "✏️", 
+                key=f"edit_{row['id']}", 
+                on_click=start_edit, 
+                args=(row['id'],)
+            )
         return
 
-    # 4. DETAIL / NEW FORM
+    # 4. DETAIL / NEW FORM VIEW
     sel = st.session_state.selected_client
     is_new = (sel == 0)
+    cli = {}
     if not is_new:
         df_cli = pd.read_sql("SELECT * FROM klientai WHERE id=?", conn, params=(sel,))
         if df_cli.empty:
             st.error("Klientas nerastas.")
-            st.session_state.selected_client = None
+            clear_selection()
             return
         cli = df_cli.iloc[0]
-    else:
-        cli = {}
 
-    # 5. Form fields
+    # Fields
     fields = [
         ("Įmonės pavadinimas",        "pavadinimas"),
         ("PVM/VAT numeris",           "vat_numeris"),
@@ -110,18 +120,18 @@ def show(conn, c):
         ("Mūsų limitas",              "musu_limitas"),
         ("Likes limitas",             "likes_limitas"),
     ]
-    limit_keys = {"coface_limitas","musu_limitas","likes_limitas"}
+    limit_keys = {"coface_limitas", "musu_limitas", "likes_limitas"}
 
-    # 6. Render inputs (3 per row)
+    # Render form inputs (3 per row)
     for i in range(0, len(fields), 3):
         cols = st.columns(3)
-        for j,(label,key) in enumerate(fields[i:i+3]):
-            default = "" if is_new else cli[key]
+        for j, (label, key) in enumerate(fields[i:i+3]):
+            default = "" if is_new else cli.get(key, "")
             cols[j].text_input(label, key=key, value=str(default))
 
-    # 7. Save / Back
+    # Save / Back buttons
     b1, b2 = st.columns(2)
-    if b1.button("💾 Išsaugoti klientą"):
+    def do_save():
         vals = []
         for _, key in fields:
             v = st.session_state[key]
@@ -129,18 +139,16 @@ def show(conn, c):
                 v = float(v) if v else 0.0
             vals.append(v)
         if is_new:
-            cols_sql     = ", ".join(k for _,k in fields)
+            cols_sql     = ", ".join(k for _, k in fields)
             placeholders = ", ".join("?" for _ in fields)
             c.execute(f"INSERT INTO klientai ({cols_sql}) VALUES ({placeholders})", tuple(vals))
         else:
             vals.append(sel)
-            set_clause = ", ".join(f"{k}=?" for _,k in fields)
+            set_clause = ", ".join(f"{k}=?" for _, k in fields)
             c.execute(f"UPDATE klientai SET {set_clause} WHERE id=?", tuple(vals))
         conn.commit()
         st.success("✅ Duomenys išsaugoti.")
-        st.session_state.selected_client = None
-        st.experimental_rerun()
+        clear_selection()
 
-    if b2.button("🔙 Grįžti į sąrašą"):
-        st.session_state.selected_client = None
-        st.experimental_rerun()
+    b1.button("💾 Išsaugoti klientą", on_click=do_save)
+    b2.button("🔙 Grįžti į sąrašą", on_click=clear_selection)

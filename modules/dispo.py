@@ -1,20 +1,25 @@
-from pathlib import Path
+# modules/dispo.py
 
-# Prepare the modules directory
-modules_dir = Path('/mnt/data/modules')
-modules_dir.mkdir(parents=True, exist_ok=True)
-
-# Define the content of the dispo.py file
-content = '''import streamlit as st
+import streamlit as st
 from datetime import date, timedelta
-import pandas as pd
-from st_aggrid import AgGrid, GridOptionsBuilder
-from st_aggrid.shared import GridUpdateMode, DataReturnMode
+import random
+import hashlib
 
 def show(conn, c):
-    st.title("DISPO – Planavimo lentelė su grupėmis (redaguojama)")
+    st.title("DISPO – Planavimo lentelė su grupėmis")
 
-    # Date selection helpers
+    lt_weekdays = {
+        0: "Pirmadienis", 1: "Antradienis", 2: "Trečiadienis",
+        3: "Ketvirtadienis", 4: "Penktadienis", 5: "Šeštadienis", 6: "Sekmadienis"
+    }
+
+    def col_letter(n: int) -> str:
+        s = ""
+        while n > 0:
+            n, r = divmod(n - 1, 26)
+            s = chr(65 + r) + s
+        return s
+
     def iso_monday(d: date) -> date:
         return d - timedelta(days=(d.isoweekday() - 1))
 
@@ -36,32 +41,31 @@ def show(conn, c):
 
     num_days = (end_date - start_date).days + 1
     dates = [start_date + timedelta(days=i) for i in range(num_days)]
+    st.write(f"Rodyti {num_days} dienų nuo {start_date} iki {end_date}.")
 
-    # Headers
     common_headers = [
-        "Transporto grupė","Ekspedicijos grupės nr.","Vilkiko nr.",
-        "Ekspeditorius","Trans. vadybininkas","Priekabos nr.",
-        "Vair. sk.","Savaitinė atstova","Pastabos"
+        "Transporto grupė", "Ekspedicijos grupės nr.",
+        "Vilkiko nr.", "Ekspeditorius",
+        "Trans. vadybininkas", "Priekabos nr.",
+        "Vair. sk.", "Savaitinė atstova", "Pastabos"
     ]
     day_headers = [
-        f"{d:%Y-%m-%d} {h}" for d in dates for h in [
-            "B. d. laikas","L. d. laikas","Atvykimo laikas",
-            "Laikas nuo","Laikas iki","Vieta","Atsakingas",
-            "Tušti km","Krauti km","Kelių išlaidos","Frachtas"
-        ]
+        "B. d. laikas", "L. d. laikas", "Atvykimo laikas",
+        "Laikas nuo", "Laikas iki", "Vieta",
+        "Atsakingas", "Tušti km", "Krauti km",
+        "Kelių išlaidos", "Frachtas"
     ]
 
-    # Fetch data
     trucks_info = c.execute("""
         SELECT
             tg.numeris AS trans_grupe,
             eg.numeris AS eksp_grupe,
-            v.numeris AS vilkiko_nr,
+            v.numeris,
             e.vardas || ' ' || e.pavarde AS ekspeditorius,
             t.vardas || ' ' || t.pavarde AS vadybininkas,
-            v.priekaba AS priekabos_nr,
+            v.priekaba,
             (SELECT COUNT(*) FROM vairuotojai WHERE priskirtas_vilkikas = v.numeris) AS vair_sk,
-            42 AS savaite
+            42 AS savaitine_atstova
         FROM vilkikai v
         LEFT JOIN darbuotojai t ON v.vadybininkas = t.vardas
         LEFT JOIN grupes tg ON t.grupe = tg.pavadinimas
@@ -69,37 +73,86 @@ def show(conn, c):
         LEFT JOIN grupes eg ON e.grupe = eg.pavadinimas
     """).fetchall()
 
-    # Build DataFrame
-    rows = []
+    all_eksp = sorted({t[3] for t in trucks_info})
+    sel_eksp = st.multiselect("Filtruok pagal ekspeditorius", options=all_eksp, default=all_eksp)
+
+    st.markdown("""
+    <style>
+      .table-container { overflow-x: auto; }
+      .table-container table {
+        border-collapse: collapse;
+        display: inline-block;
+        white-space: nowrap;
+      }
+      th, td {
+        border:1px solid #ccc;
+        padding:4px;
+        text-align:center;
+      }
+      th {
+        background:#f5f5f5;
+        position:sticky;
+        top:0;
+        z-index:1;
+      }
+    </style>
+    """, unsafe_allow_html=True)
+
+    def get_rnd(truck: str, day: str) -> random.Random:
+        seed = int(hashlib.md5(f"{truck}-{day}".encode()).hexdigest(), 16)
+        return random.Random(seed)
+
+    total_common = len(common_headers)
+    total_day_cols = len(dates) * len(day_headers)
+    total_all_cols = 1 + total_common + total_day_cols
+
+    html = '<div class="table-container"><table>\n'
+    html += "<tr>" + "".join(f"<th>{col_letter(i)}</th>" for i in range(1, total_all_cols + 1)) + "</tr>\n"
+    html += "<tr><th></th><th colspan=\"{}\"></th>".format(total_common)
+    for d in dates:
+        wd = lt_weekdays[d.weekday()]
+        html += f'<th colspan="{len(day_headers)}">{d:%Y-%m-%d} {wd}</th>'
+    html += "</tr>\n"
+
+    html += "<tr><th>#</th>" + "".join(f"<th>{h}</th>" for h in common_headers)
+    for _ in dates:
+        for hh in day_headers:
+            html += f"<th>{hh}</th>"
+    html += "</tr>\n"
+
+    row_num = 1
     for row in trucks_info:
-        rows.append(list(row) + [''] * len(day_headers))
-    df = pd.DataFrame(rows, columns=common_headers + day_headers)
+        if row[3] not in sel_eksp:
+            continue
+        html += f"<tr><td>{row_num}</td>"
+        for val in row:
+            html += f'<td rowspan="2">{val}</td>'
+        html += "<td></td>"
+        for d in dates:
+            key = d.strftime("%Y-%m-%d")
+            rnd = get_rnd(row[2], key)
+            atv = f"{rnd.randint(0, 23):02d}:{rnd.randint(0, 59):02d}"
+            city = rnd.choice(["Vilnius", "Kaunas", "Berlin"])
+            html += ("<td></td><td></td>"
+                     f"<td>{atv}</td><td></td><td></td>"
+                     f"<td>{city}</td>" + "<td></td>" * 5)
+        html += "</tr>\n"
 
-    # Configure AgGrid
-    gb = GridOptionsBuilder.from_dataframe(df)
-    gb.configure_default_column(editable=True, resizable=True)
-    gb.configure_grid_options(domLayout='autoHeight')
-    gridOptions = gb.build()
+        html += f"<tr><td>{row_num + 1}</td>" + "<td></td>" * total_common
+        for d in dates:
+            key = d.strftime("%Y-%m-%d")
+            rnd = get_rnd(row[2], key)
+            t1 = f"{rnd.randint(7, 9):02d}:00"
+            kms = rnd.randint(20, 120)
+            costs = kms * 5
+            fr = round(rnd.uniform(800, 1200), 2)
+            dest = rnd.choice(["Riga", "Poznan"])
+            html += ("<td>9</td><td>6</td>"
+                     f"<td>{t1}</td><td>{t1}</td><td>16:00</td>"
+                     f"<td>{dest}</td><td></td>"
+                     f"<td>{kms}</td><td>{costs}</td><td></td><td>{fr}</td>")
+        html += "</tr>\n"
+        row_num += 2
 
-    # Display editable grid
-    grid_response = AgGrid(
-        df,
-        gridOptions=gridOptions,
-        update_mode=GridUpdateMode.VALUE_CHANGED,
-        data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
-        fit_columns_on_grid_load=True,
-        enable_enterprise_modules=False,
-        theme='light'
-    )
-
-    # Save edits
-    edited = grid_response['data']
-    if edited is not None:
-        edited.to_sql('dispo_data', conn, if_exists='replace', index=False)
-        st.success("Duomenys sėkmingai išsaugoti!")'''
-
-# Write the file
-file_path = modules_dir / 'dispo.py'
-file_path.write_text(content)
-
-file_path
+    html += "</table></div>"
+    st.markdown(html, unsafe_allow_html=True)

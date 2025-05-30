@@ -1,15 +1,20 @@
-import streamlit as st
+from pathlib import Path
+
+# Prepare the modules directory
+modules_dir = Path('/mnt/data/modules')
+modules_dir.mkdir(parents=True, exist_ok=True)
+
+# Define the content of the dispo.py file
+content = '''import streamlit as st
 from datetime import date, timedelta
 import pandas as pd
-from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
+from st_aggrid import AgGrid, GridOptionsBuilder
 from st_aggrid.shared import GridUpdateMode, DataReturnMode
-
-# Persistence: save edits to SQLite via passed connection
 
 def show(conn, c):
     st.title("DISPO – Planavimo lentelė su grupėmis (redaguojama)")
 
-    # Date selection
+    # Date selection helpers
     def iso_monday(d: date) -> date:
         return d - timedelta(days=(d.isoweekday() - 1))
 
@@ -24,15 +29,29 @@ def show(conn, c):
     with c2:
         end_sel = st.date_input("Pabaigos data:", value=end_default)
 
-    start_date, end_date = (end_sel, start_sel) if end_sel < start_sel else (start_sel, end_sel)
+    if end_sel < start_sel:
+        start_date, end_date = end_sel, start_sel
+    else:
+        start_date, end_date = start_sel, end_sel
+
     num_days = (end_date - start_date).days + 1
     dates = [start_date + timedelta(days=i) for i in range(num_days)]
 
-    # Common headers and day headers
-    common_headers = ["Transporto grupė","Ekspedicijos grupės nr.","Vilkiko nr.","Ekspeditorius","Trans. vadybininkas","Priekabos nr.","Vair. sk.","Savaitinė atstova","Pastabos"]
-    day_headers = [f"{d:%Y-%m-%d} {h}" for d in dates for h in ["B.d.laikas","L.d.laikas","Atvykimo laikas","Laikas nuo","Laikas iki","Vieta","Atsakingas","Tušti km","Krauti km","Kelių išlaidos","Frachtas"]]
+    # Headers
+    common_headers = [
+        "Transporto grupė","Ekspedicijos grupės nr.","Vilkiko nr.",
+        "Ekspeditorius","Trans. vadybininkas","Priekabos nr.",
+        "Vair. sk.","Savaitinė atstova","Pastabos"
+    ]
+    day_headers = [
+        f"{d:%Y-%m-%d} {h}" for d in dates for h in [
+            "B. d. laikas","L. d. laikas","Atvykimo laikas",
+            "Laikas nuo","Laikas iki","Vieta","Atsakingas",
+            "Tušti km","Krauti km","Kelių išlaidos","Frachtas"
+        ]
+    ]
 
-    # Fetch base data
+    # Fetch data
     trucks_info = c.execute("""
         SELECT
             tg.numeris AS trans_grupe,
@@ -50,21 +69,19 @@ def show(conn, c):
         LEFT JOIN grupes eg ON e.grupe = eg.pavadinimas
     """).fetchall()
 
-    # Build dataframe
+    # Build DataFrame
     rows = []
     for row in trucks_info:
-        base = list(row) + ['']*len(day_headers)
-        rows.append(base)
+        rows.append(list(row) + [''] * len(day_headers))
     df = pd.DataFrame(rows, columns=common_headers + day_headers)
 
-    # AgGrid options
+    # Configure AgGrid
     gb = GridOptionsBuilder.from_dataframe(df)
     gb.configure_default_column(editable=True, resizable=True)
     gb.configure_grid_options(domLayout='autoHeight')
-    # Merge blocks: based on common headers, group rows? use cellClassRules not true merge
     gridOptions = gb.build()
 
-    # Render editable grid
+    # Display editable grid
     grid_response = AgGrid(
         df,
         gridOptions=gridOptions,
@@ -75,11 +92,14 @@ def show(conn, c):
         theme='light'
     )
 
+    # Save edits
     edited = grid_response['data']
-    st.write(f"Iš viso eilučių: {len(edited)}")
-
-    # Save back on change
-    if grid_response['data'] is not None:
-        # flatten to JSON/text or write each cell; here we store edits into a table 'dispo_data'
+    if edited is not None:
         edited.to_sql('dispo_data', conn, if_exists='replace', index=False)
-        st.success("Duomenys sėkmingai išsaugoti!")
+        st.success("Duomenys sėkmingai išsaugoti!")'''
+
+# Write the file
+file_path = modules_dir / 'dispo.py'
+file_path.write_text(content)
+
+file_path

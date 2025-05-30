@@ -28,7 +28,6 @@ def show(conn, c):
 
     # Callbacks
     def clear_selection():
-        # clear selected and all filters
         st.session_state.selected_vilk = None
         for key in list(st.session_state):
             if key.startswith("f_"):
@@ -70,34 +69,46 @@ def show(conn, c):
         if df.empty:
             st.info("🔍 Kol kas nėra vilkikų.")
         else:
+            # Rename and split columns
+            df_display = df.copy()
+            # Split drivers into two columns
+            drivers = df_display['vairuotojai'].str.split(', ', n=1, expand=True)
+            df_display['Vairuotojas 1'] = drivers[0]
+            df_display['Vairuotojas 2'] = drivers[1]
+            df_display.drop(columns=['vairuotojai'], inplace=True)
+            # Rename vadybininkas
+            df_display.rename(columns={'vadybininkas': 'transporto vadybininkas'}, inplace=True)
+
             # Filters for all columns
-            filter_cols = st.columns(len(df.columns) + 1)
-            for i, col in enumerate(df.columns):
+            filter_cols = st.columns(len(df_display.columns) + 1)
+            for i, col in enumerate(df_display.columns):
                 filter_cols[i].text_input(col, key=f"f_{col}")
             filter_cols[-1].write("")
-            df_disp = df.copy()
-            for col in df.columns:
+
+            # Apply filters
+            df_filt = df_display.copy()
+            for col in df_display.columns:
                 val = st.session_state.get(f"f_{col}", "")
                 if val:
-                    df_disp = df_disp[df_disp[col].astype(str).str.contains(val, case=False, na=False)]
+                    df_filt = df_filt[df_filt[col].astype(str).str.contains(val, case=False, na=False)]
 
             # Header row
-            hdr = st.columns(len(df_disp.columns) + 1)
-            for i, col in enumerate(df_disp.columns): hdr[i].markdown(f"**{col}**")
+            hdr = st.columns(len(df_filt.columns) + 1)
+            for i, col in enumerate(df_filt.columns): hdr[i].markdown(f"**{col}**")
             hdr[-1].markdown("**Veiksmai**")
 
             # Data rows
-            for _, row in df_disp.iterrows():
-                row_cols = st.columns(len(df_disp.columns) + 1)
-                for i, col in enumerate(df_disp.columns):
+            for _, row in df_filt.iterrows():
+                row_cols = st.columns(len(df_filt.columns) + 1)
+                for i, col in enumerate(df_filt.columns):
                     row_cols[i].write(row[col])
                 row_cols[-1].button(
                     "✏️", key=f"edit_{row['numeris']}", on_click=edit_vilk, args=(row['numeris'],)
                 )
 
             # CSV export with days left
-            df['dienu_liko_tech']  = df['tech_apziuros pabaiga'] = df['tech_apziura'].apply(lambda x: (date.fromisoformat(x) - date.today()).days if x else None)
-            df['dienu_liko_draud'] = df['draudimo galiojimo pabaiga'] = df['draudimas'].apply(lambda x: (date.fromisoformat(x) - date.today()).days if x else None)
+            df['dienu_liko_tech']  = df['tech_apziura'].apply(lambda x: (date.fromisoformat(x) - date.today()).days if x else None)
+            df['dienu_liko_draud'] = df['draudimas'].apply(lambda x: (date.fromisoformat(x) - date.today()).days if x else None)
             csv = df.to_csv(index=False, sep=';').encode('utf-8')
             st.download_button(
                 label="💾 Eksportuoti kaip CSV",
@@ -133,8 +144,9 @@ def show(conn, c):
         draud_initial = date.fromisoformat(vilk['draudimas']) if not is_new and vilk['draudimas'] else None
         draud_date    = col1.date_input("Draudimo galiojimo pabaiga", value=draud_initial, key="draud_date")
 
+        # Transporto vadybininkas
         vadyb = col2.text_input("Transporto vadybininkas", value=("" if is_new else vilk['vadybininkas']))
-        # Vairuotojai
+        # Vairuotojas 1 & 2
         v1_opts = [""] + vairuotoju_list
         v1_idx, v2_idx = 0, 0
         if not is_new and vilk['vairuotojai']:

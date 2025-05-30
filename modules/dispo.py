@@ -1,7 +1,6 @@
 import streamlit as st
 from datetime import date, timedelta
-import random
-import hashlib
+
 from streamlit_javascript import st_javascript
 
 def show(conn=None, c=None):
@@ -43,7 +42,6 @@ def show(conn=None, c=None):
 
     st.write(f"Rodyti {num_days} dienų nuo {start_date} iki {end_date}.")
 
-    # Lentelės stulpelių pavadinimai
     common_headers = [
         "Transporto grupė", "Ekspedicijos grupės nr.",
         "Vilkiko nr.", "Ekspeditorius",
@@ -57,7 +55,7 @@ def show(conn=None, c=None):
         "Kelių išlaidos", "Frachtas"
     ]
 
-    # DEMO duomenys
+    # DEMO duomenys (vietoj DB užklausos)
     trucks_info = [
         ("A1", "G2", "VVK-123", "Jonas Jonaitis", "Petras Petrauskas", "PR-987", 2, 42, ""),
         ("A2", "G3", "VVK-456", "Ona Onaitytė", "Ieva Ievaitė", "PR-654", 1, 36, ""),
@@ -133,7 +131,7 @@ def show(conn=None, c=None):
                 )
         html += "</tr>\n"
 
-        # Antra eilutė gali būti kitokia (pvz. tuščia ar papildomi input'ai)
+        # Antra eilutė (tuščia, jei nereikia kitos logikos)
         html += f"<tr><td></td>" + "<td></td>" * total_common
         for d in dates:
             d_str = d.strftime("%Y-%m-%d")
@@ -148,27 +146,28 @@ def show(conn=None, c=None):
 
     html += "</table></div>"
 
-    # JS komunikacija per streamlit-javascript
-    html += """
-    <script>
-    function updateCell(rowIdx, date, col, value) {
-        if (window.parent) {
-            window.parent.postMessage(
-                {
-                    isStreamlitMessage: true,
-                    type: 'streamlit:setComponentValue',
-                    value: {row: rowIdx, date: date, col: col, value: value}
-                }, '*'
-            );
-        }
-    }
-    </script>
-    """
-
     st.markdown(html, unsafe_allow_html=True)
 
-    # Gauna event iš JS – įrašo į session_state (galima pakeisti į DB)
-    cell_update = st_javascript(js_code="", args={})
+    # Čia registruojame JS funkciją updateCell
+    cell_update = st_javascript(
+        js_code="""
+        if (!window.updateCellLoaded) {
+            window.updateCellLoaded = true;
+            window.updateCell = function(rowIdx, date, col, value) {
+                window.parent.postMessage(
+                    {
+                        isStreamlitMessage: true,
+                        type: 'streamlit:setComponentValue',
+                        value: {row: rowIdx, date: date, col: col, value: value}
+                    }, '*'
+                );
+            }
+        }
+        """,
+        args={}
+    )
+
+    # Gauname naują įvestą reikšmę
     if cell_update and "value" in cell_update and cell_update["value"]:
         key = f"{cell_update['value']['row']}_{cell_update['value']['date']}_{cell_update['value']['col']}"
         st.session_state.cell_store[key] = cell_update['value']['value']

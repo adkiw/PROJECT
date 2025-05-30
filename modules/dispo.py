@@ -1,8 +1,10 @@
 import streamlit as st
 from datetime import date, timedelta
+import random
+import hashlib
 
-def show(conn=None, c=None):
-    st.title("DISPO – Planavimo lentelė su grupėmis (saugoma paspaudus mygtuką, HTML vaizdas)")
+def show(conn, c):
+    st.title("DISPO – Planavimo lentelė su grupėmis")
 
     lt_weekdays = {
         0: "Pirmadienis", 1: "Antradienis", 2: "Trečiadienis",
@@ -52,12 +54,26 @@ def show(conn=None, c=None):
         "Kelių išlaidos", "Frachtas"
     ]
 
-    trucks_info = [
-        ("A1", "G2", "VVK-123", "Jonas Jonaitis", "Petras Petrauskas", "PR-987", 2, 42, ""),
-        ("A2", "G3", "VVK-456", "Ona Onaitytė", "Ieva Ievaitė", "PR-654", 1, 36, ""),
-    ]
+    trucks_info = c.execute("""
+        SELECT
+            tg.numeris AS trans_grupe,
+            eg.numeris AS eksp_grupe,
+            v.numeris,
+            e.vardas || ' ' || e.pavarde AS ekspeditorius,
+            t.vardas || ' ' || t.pavarde AS vadybininkas,
+            v.priekaba,
+            (SELECT COUNT(*) FROM vairuotojai WHERE priskirtas_vilkikas = v.numeris) AS vair_sk,
+            42 AS savaitine_atstova
+        FROM vilkikai v
+        LEFT JOIN darbuotojai t ON v.vadybininkas = t.vardas
+        LEFT JOIN grupes tg ON t.grupe = tg.pavadinimas
+        LEFT JOIN darbuotojai e ON v.vairuotojai LIKE '%' || e.vardas || '%'
+        LEFT JOIN grupes eg ON e.grupe = eg.pavadinimas
+    """).fetchall()
 
-    # Stilius išlaiko lentelės vaizdą
+    all_eksp = sorted({t[3] for t in trucks_info})
+    sel_eksp = st.multiselect("Filtruok pagal ekspeditorius", options=all_eksp, default=all_eksp)
+
     st.markdown("""
     <style>
       .table-container { overflow-x: auto; }
@@ -86,8 +102,10 @@ def show(conn=None, c=None):
     </style>
     """, unsafe_allow_html=True)
 
-    # Čia prasideda forma
-    with st.form("lenteles_forma"):
+    # Visi input duomenys
+    inputs = {}
+
+    with st.form("dispo_form"):
         html = '<div class="table-container"><table>\n'
         total_common = len(common_headers)
         total_day_cols = len(dates) * len(day_headers)
@@ -98,50 +116,54 @@ def show(conn=None, c=None):
             wd = lt_weekdays[d.weekday()]
             html += f'<th colspan="{len(day_headers)}">{d:%Y-%m-%d} {wd}</th>'
         html += "</tr>\n"
+
         html += "<tr><th>#</th>" + "".join(f"<th>{h}</th>" for h in common_headers)
         for _ in dates:
             for hh in day_headers:
                 html += f"<th>{hh}</th>"
         html += "</tr>\n"
 
-        # Lentelės input'ai (su Streamlit "state"!)
-        inputs = {}
-        for row_idx, row in enumerate(trucks_info, 1):
-            html += f"<tr><td>{row_idx}</td>"
+        row_num = 1
+        for row in trucks_info:
+            if row[3] not in sel_eksp:
+                continue
+            html += f"<tr><td>{row_num}</td>"
             for val in row:
                 html += f'<td rowspan="2">{val}</td>'
             html += "<td></td>"
             for d in dates:
                 d_str = d.strftime("%Y-%m-%d")
                 for col in day_headers:
-                    key = f"{row_idx}_{d_str}_{col}"
-                    # Streamlit input – sugeneruoja ID pagal eilutę, datą, stulpelį
-                    inputs[key] = st.text_input("", value="", key=key)
+                    key = f"a_{row_num}_{d_str}_{col}"
+                    value = st.session_state.get(key, "")
+                    # čia input laukelis, kuris bus įterptas į HTML
+                    inputs[key] = st.text_input("", value=value, key=key)
                     html += f"<td>{{{key}}}</td>"
             html += "</tr>\n"
 
-            html += f"<tr><td></td>" + "<td></td>" * total_common
+            html += f"<tr><td>{row_num + 1}</td>" + "<td></td>" * total_common
             for d in dates:
                 d_str = d.strftime("%Y-%m-%d")
                 for col in day_headers:
-                    key = f"{row_idx}_b_{d_str}_{col}"
-                    inputs[key] = st.text_input("", value="", key=key)
+                    key = f"b_{row_num}_{d_str}_{col}"
+                    value = st.session_state.get(key, "")
+                    inputs[key] = st.text_input("", value=value, key=key)
                     html += f"<td>{{{key}}}</td>"
             html += "</tr>\n"
+            row_num += 2
 
         html += "</table></div>"
 
-        # Dinamiškai įterpiam input reikšmes į HTML (kad matytųsi, kas įvesta)
+        # Input reikšmės į HTML
         for k, v in inputs.items():
             html = html.replace(f"{{{k}}}", v)
 
         st.markdown(html, unsafe_allow_html=True)
-
         submitted = st.form_submit_button("Išsaugoti")
         if submitted:
             st.success("Duomenys išsaugoti!")
-            st.write(inputs)
+            st.write(inputs)  # arba rašyti į DB
 
-    # Rodomas visas surinktas dict (tik demonstracijai)
+    # Galima parodyti visus įvestus duomenis
     with st.expander("Žiūrėti visus įvestus duomenis"):
         st.write(inputs)

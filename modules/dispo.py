@@ -71,10 +71,10 @@ def show(conn, c):
     all_eksp = sorted({t[3] for t in trucks_info})
     sel_eksp = st.multiselect("Filtruok pagal ekspeditorius", options=all_eksp, default=all_eksp)
 
-    # Pasiruošiam DataFrame struktūrą
-    # Stulpelių pavadinimai: bendrieji + kiekvienai datai dienos antraščių deriniai
+    # Paruošiam DataFrame
     columns = ["#"] + common_headers + [
-        f"{d:%Y-%m-%d} {lt_weekdays[d.weekday()]} – {h}" for d in dates for h in day_headers
+        f"{d:%Y-%m-%d} {lt_weekdays[d.weekday()]} – {h}"
+        for d in dates for h in day_headers
     ]
 
     rows = []
@@ -84,56 +84,47 @@ def show(conn, c):
         if eksp not in sel_eksp:
             continue
 
-        # Du eilutės vienam vilkikui
         for part in [1, 2]:
             data_row = {"#": row_num}
-            # tik pirmai eilutei pridedam bendrus duomenis
             if part == 1:
                 for idx, val in enumerate(row):
                     data_row[common_headers[idx]] = val
             else:
                 for h in common_headers:
-                    data_row[h] = ""  # tušti bendrieji langeliai antrajai eilutei
+                    data_row[h] = ""
 
-            # užpildome dienų stulpelius atsitiktiniais demo duomenimis
             for d in dates:
                 key = d.strftime("%Y-%m-%d")
                 rnd = random.Random(int(hashlib.md5(f"{row[2]}-{key}".encode()).hexdigest(), 16))
                 for h in day_headers:
-                    col_name = f"{d:%Y-%m-%d} {lt_weekdays[d.weekday()]} – {h}"
+                    col = f"{d:%Y-%m-%d} {lt_weekdays[d.weekday()]} – {h}"
                     if part == 1:
                         if h == "Atvykimo laikas":
-                            data_row[col_name] = f"{rnd.randint(0,23):02d}:{rnd.randint(0,59):02d}"
+                            data_row[col] = f"{rnd.randint(0,23):02d}:{rnd.randint(0,59):02d}"
                         elif h == "Vieta":
-                            data_row[col_name] = rnd.choice(["Vilnius", "Kaunas", "Berlin"])
+                            data_row[col] = rnd.choice(["Vilnius", "Kaunas", "Berlin"])
                         else:
-                            data_row[col_name] = ""
+                            data_row[col] = ""
                     else:
                         if h == "Laikas nuo":
-                            data_row[col_name] = f"{rnd.randint(7,9):02d}:00"
+                            data_row[col] = f"{rnd.randint(7,9):02d}:00"
                         elif h == "Krauti km":
-                            kms = rnd.randint(20,120)
-                            data_row[col_name] = kms
+                            data_row[col] = rnd.randint(20,120)
                         elif h == "Frachtas":
-                            data_row[col_name] = round(rnd.uniform(800,1200),2)
+                            data_row[col] = round(rnd.uniform(800,1200),2)
                         else:
-                            data_row[col_name] = ""
+                            data_row[col] = ""
             rows.append(data_row)
             row_num += 1
 
     df = pd.DataFrame(rows, columns=columns)
 
-    # Parodome redaguojamą lentelę
+    # Rodyti redaguojamą lentelę (visi stulpeliai redaguojami)
     edited = st.data_editor(
         df,
         num_rows="fixed",
         use_container_width=True,
-        column_config={
-            "#": st.ColumnConfig(type="numeric", width="small", disabled=True)
-        },
         key="dispo_editor"
     )
 
-    # Jeigu reikia, čia galima perskaityti `edited` DataFrame ir įrašyti pakeitimus atgal į DB
-
-    st.success("Galite keisti bet kurį langelį po datomis ir bendruosius, išskyrus eil. numerį.") 
+    st.success("Galite keisti bet kurį langelį po datomis ir bendruosius laukus.") 

@@ -28,11 +28,13 @@ def show(conn, c):
 
     # Callbacks
     def clear_selection():
+        # clear selected and all filters
         st.session_state.selected_vilk = None
-    def new_vilk():
-        st.session_state.selected_vilk = 0
-    def edit_vilk(numeris):
-        st.session_state.selected_vilk = numeris
+        for key in list(st.session_state):
+            if key.startswith("f_"):
+                st.session_state[key] = ""
+    def new_vilk(): st.session_state.selected_vilk = 0
+    def edit_vilk(numeris): st.session_state.selected_vilk = numeris
 
     # 3) Title and Add button
     col_title, col_add = st.columns([9, 1])
@@ -43,7 +45,26 @@ def show(conn, c):
     if 'selected_vilk' not in st.session_state:
         st.session_state.selected_vilk = None
 
-    # 5) List view
+    # 5) Bendras priekabų priskirstymas (above list)
+    st.markdown("### 🔄 Bendras priekabų priskirstymas")
+    with st.form("priekabu_priskirt_forma", clear_on_submit=True):
+        vilk_list = [""] + [r[0] for r in c.execute("SELECT numeris FROM vilkikai").fetchall()]
+        pr_opts   = [""]
+        for num in priekabu_list:
+            assigned = [r[0] for r in c.execute("SELECT numeris FROM vilkikai WHERE priekaba = ?", (num,)).fetchall()]
+            pr_opts.append(
+                f"🔴 {num} ({', '.join(assigned)})" if assigned else f"🟢 {num} (laisva)"
+            )
+        sel_vilk  = st.selectbox("Pasirinkite vilkiką", vilk_list)
+        sel_priek = st.selectbox("Pasirinkite priekabą", pr_opts)
+        upd       = st.form_submit_button("💾 Išsaugoti")
+    if upd and sel_vilk:
+        prn = sel_priek.split()[1] if sel_priek.startswith(("🟢","🔴")) else None
+        c.execute("UPDATE vilkikai SET priekaba = ? WHERE numeris = ?", (prn, sel_vilk))
+        conn.commit()
+        st.success(f"✅ Priekaba {prn or '(tuščia)'} priskirta {sel_vilk}.")
+
+    # 6) List view
     if st.session_state.selected_vilk is None:
         df = pd.read_sql_query("SELECT * FROM vilkikai ORDER BY tech_apziura ASC", conn)
         if df.empty:
@@ -75,8 +96,8 @@ def show(conn, c):
                 )
 
             # CSV export with days left
-            df['dienu_liko_tech']  = df['tech_apziura'].apply(lambda x: (date.fromisoformat(x) - date.today()).days if x else None)
-            df['dienu_liko_draud'] = df['draudimas'].apply(lambda x: (date.fromisoformat(x) - date.today()).days if x else None)
+            df['dienu_liko_tech']  = df['tech_apziuros pabaiga'] = df['tech_apziura'].apply(lambda x: (date.fromisoformat(x) - date.today()).days if x else None)
+            df['dienu_liko_draud'] = df['draudimo galiojimo pabaiga'] = df['draudimas'].apply(lambda x: (date.fromisoformat(x) - date.today()).days if x else None)
             csv = df.to_csv(index=False, sep=';').encode('utf-8')
             st.download_button(
                 label="💾 Eksportuoti kaip CSV",
@@ -84,25 +105,6 @@ def show(conn, c):
                 file_name="vilkikai.csv",
                 mime="text/csv"
             )
-
-        # 6) Bendras priekabų priskirstymas
-        st.markdown("### 🔄 Bendras priekabų priskirstymas")
-        with st.form("priekabu_priskirt_forma", clear_on_submit=True):
-            vilk_list = [""] + [r[0] for r in c.execute("SELECT numeris FROM vilkikai").fetchall()]
-            pr_opts   = [""]
-            for num in priekabu_list:
-                assigned = [r[0] for r in c.execute("SELECT numeris FROM vilkikai WHERE priekaba = ?", (num,)).fetchall()]
-                pr_opts.append(
-                    f"🔴 {num} ({', '.join(assigned)})" if assigned else f"🟢 {num} (laisva)"
-                )
-            sel_vilk  = st.selectbox("Pasirinkite vilkiką", vilk_list)
-            sel_priek = st.selectbox("Pasirinkite priekabą", pr_opts)
-            upd       = st.form_submit_button("💾 Išsaugoti")
-        if upd and sel_vilk:
-            prn = sel_priek.split()[1] if sel_priek.startswith(("🟢","🔴")) else None
-            c.execute("UPDATE vilkikai SET priekaba = ? WHERE numeris = ?", (prn, sel_vilk))
-            conn.commit()
-            st.success(f"✅ Priekaba {prn or '(tuščia)'} priskirta {sel_vilk}.")
         return
 
     # 7) Detail / New form view

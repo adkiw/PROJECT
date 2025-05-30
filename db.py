@@ -122,5 +122,18 @@ def init_db():
         )
     """)
 
+    # Nauja lentelė vilkikų darbo laikui
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS vilkiku_darbo_laikai (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            vilkiko_numeris TEXT,
+            data TEXT,
+            darbo_laikas INTEGER,
+            likes_laikas INTEGER,
+            atvykimo_pakrovimas TEXT,
+            atvykimo_iskrovimas TEXT
+        )
+    """)
+
     conn.commit()
     return conn, c

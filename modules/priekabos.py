@@ -1,75 +1,91 @@
-# modules/priekabos.py
-
 import streamlit as st
 import pandas as pd
 from datetime import date
 
+# modules/priekabos.py
+
 def show(conn, c):
     st.title("DISPO – Priekabų valdymas")
 
+    # 1) Formos įvedimas su kalendoriais ir pervadintais laukais
     with st.form("priek_form", clear_on_submit=True):
         tipas = st.text_input("Tipas")
         numeris = st.text_input("Numeris")
-        marke = st.text_input("Markė")
-        pag_metai = st.text_input("Pagaminimo metai")
-        tech_apz = st.date_input("Tech. apžiūra")
+        modelis = st.text_input("Modelis")
+        pr_data = st.date_input("Pirmos registracijos data", value=None, key="pr_data")
+        tech_apz = st.date_input("Tech. apžiūra", value=None, key="tech_apz")
         priskirtas_vilkikas = st.text_input("Priskirtas vilkikas")
         sub = st.form_submit_button("💾 Išsaugoti priekabą")
 
+    # 2) Įrašymas į DB
     if sub:
         if not numeris:
             st.warning("⚠️ Įveskite numerį.")
         else:
             try:
-                c.execute("""
+                c.execute(
+                    """
                     INSERT INTO priekabos (
                         priekabu_tipas, numeris, marke,
                         pagaminimo_metai, tech_apziura, priskirtas_vilkikas
                     ) VALUES (?, ?, ?, ?, ?, ?)
-                """, (tipas, numeris, marke, int(pag_metai or 0), str(tech_apz), priskirtas_vilkikas))
+                    """,
+                    (
+                        tipas,
+                        numeris,
+                        modelis or None,
+                        pr_data.isoformat() if pr_data else None,
+                        tech_apz.isoformat() if tech_apz else None,
+                        priskirtas_vilkikas
+                    )
+                )
                 conn.commit()
                 st.success("✅ Išsaugota sėkmingai.")
             except Exception as e:
                 st.error(f"❌ Klaida: {e}")
 
+    # 3) Priekabų sąrašas su dienų iki techninės apžiūros
     st.subheader("📋 Priekabų sąrašas")
     df = pd.read_sql_query("SELECT * FROM priekabos", conn)
 
-    if not df.empty:
-        st.dataframe(df, use_container_width=True)
-        for i, row in df.iterrows():
-            with st.expander(f"🚛 Priekaba {row['numeris']}"):
-                new_tip = st.text_input("Tipas", row['priekabu_tipas'], key=f"tip_{i}")
-                new_num = st.text_input("Numeris", row['numeris'], key=f"num_{i}")
-                new_marke = st.text_input("Markė", row['marke'], key=f"marke_{i}")
-                new_metai = st.text_input("Pagaminimo metai", row['pagaminimo_metai'], key=f"metai_{i}")
-                new_tech = st.date_input("Tech. apžiūra", pd.to_datetime(row['tech_apziura']), key=f"tech_{i}")
-                new_vilkikas = st.text_input("Priskirtas vilkikas", row['priskirtas_vilkikas'], key=f"pv_{i}")
-
-                col1, col2 = st.columns(2)
-                if col1.button("💾 Išsaugoti pakeitimus", key=f"save_{i}"):
-                    try:
-                        c.execute("""
-                            UPDATE priekabos SET
-                                priekabu_tipas = ?,
-                                numeris = ?,
-                                marke = ?,
-                                pagaminimo_metai = ?,
-                                tech_apziura = ?,
-                                priskirtas_vilkikas = ?
-                            WHERE id = ?
-                        """, (new_tip, new_num, new_marke, int(new_metai or 0), str(new_tech), new_vilkikas, row['id']))
-                        conn.commit()
-                        st.success("✅ Pakeitimai išsaugoti.")
-                    except Exception as e:
-                        st.error(f"❌ Klaida: {e}")
-
-                if col2.button("🗑 Ištrinti priekabą", key=f"del_{i}"):
-                    try:
-                        c.execute("DELETE FROM priekabos WHERE id = ?", (row['id'],))
-                        conn.commit()
-                        st.warning("🗑 Priekaba pašalinta.")
-                    except Exception as e:
-                        st.error(f"❌ Klaida trinant: {e}")
-    else:
+    if df.empty:
         st.info("ℹ️ Nėra priekabų įrašų.")
+        return
+
+    # Ruošiame rodymui
+    df_disp = df.copy()
+    # Pervadiname stulpelius
+    df_disp.rename(
+        columns={
+            'marke': 'Modelis',
+            'pagaminimo_metai': 'Pirmos registracijos data'
+        },
+        inplace=True
+    )
+    # Apskaičiuojame dienas iki techninės apžiūros
+    df_disp['Liko iki tech. apžiūros'] = df_disp['tech_apziura'].apply(
+        lambda x: (date.fromisoformat(x) - date.today()).days if x else None
+    )
+
+    # Rodyti lentelę su filtravimu
+    filter_cols = st.columns(len(df_disp.columns) + 1)
+    for i, col in enumerate(df_disp.columns):
+        filter_cols[i].text_input(col, key=f"f_{col}")
+    filter_cols[-1].write("")
+
+    df_filt = df_disp.copy()
+    for col in df_disp.columns:
+        val = st.session_state.get(f"f_{col}", "")
+        if val:
+            df_filt = df_filt[df_filt[col].astype(str).str.contains(val, case=False, na=False)]
+
+    st.dataframe(df_filt, use_container_width=True)
+
+    # CSV export
+    csv = df.to_csv(index=False, sep=';').encode('utf-8')
+    st.download_button(
+        label="💾 Eksportuoti kaip CSV",
+        data=csv,
+        file_name="priekabos.csv",
+        mime="text/csv"
+    )

@@ -1,5 +1,5 @@
 import streamlit as st
-from modules import dispo, kroviniai, vilkikai, priekabos, grupes, vairuotojai, klientai, darbuotojai, nustatymai
+from modules import dispo, kroviniai, vilkikai, priekabos, grupes, vairuotojai, klientai, darbuotojai, nustatymai, update
 from db import init_db
 
 # Streamlit išdėstymo nustatymas
@@ -12,7 +12,7 @@ conn, c = init_db()
 moduliai = [
     "Dispo", "Kroviniai", "Vilkikai", "Priekabos",
     "Grupės", "Vairuotojai", "Klientai",
-    "Darbuotojai", "Nustatymai"
+    "Darbuotojai", "Nustatymai", "Update"  # <- naujas modulis
 ]
 
 # Modulio pasirinkimas
@@ -37,3 +37,5 @@ elif modulis == "Darbuotojai":
     darbuotojai.show(conn, c)
 elif modulis == "Nustatymai":
     nustatymai.show(conn, c)
+elif modulis == "Update":
+    update.show(conn, c)

@@ -1,5 +1,3 @@
-# modules/dispo.py
-
 import streamlit as st
 from datetime import date, timedelta
 import random, hashlib
@@ -71,7 +69,7 @@ def show(conn, c):
     all_eksp = sorted({r[3] for r in trucks_info})
     sel_eksp = st.multiselect("Filtruok pagal ekspeditorius", all_eksp, default=all_eksp)
 
-    # Ruošiam eiles
+    # Ruošiam eiles DataFrame
     rows = []
     row_num = 1
     for vals in trucks_info:
@@ -79,62 +77,56 @@ def show(conn, c):
         if eksp not in sel_eksp:
             continue
 
-        # Kiekvienam vilkikui 2 eilutės su part=1 arba part=2
+        # Kiekvienam vilkikui dvi eilutės
         for part in (1, 2):
-            row = {"#": row_num, "part": part}
+            r = {"#": row_num, "part": part}
             if part == 1:
                 for i, h in enumerate(common_headers):
-                    row[h] = vals[i]
+                    r[h] = vals[i]
             else:
                 for h in common_headers:
-                    row[h] = ""
+                    r[h] = ""
 
             for d in dates:
                 key = d.strftime("%Y-%m-%d")
                 rnd = random.Random(int(hashlib.md5(f"{vals[2]}-{key}".encode()).hexdigest(),16))
-                weekday = lt_weekdays[d.weekday()]
+                wd = lt_weekdays[d.weekday()]
                 for h in day_headers:
-                    col = f"{d:%Y-%m-%d} {weekday} – {h}"
+                    col = f"{d:%Y-%m-%d} {wd} – {h}"
                     if part == 1:
                         if h == "Atvykimo laikas":
-                            row[col] = f"{rnd.randint(0,23):02d}:{rnd.randint(0,59):02d}"
+                            r[col] = f"{rnd.randint(0,23):02d}:{rnd.randint(0,59):02d}"
                         elif h == "Vieta":
-                            row[col] = rnd.choice(["Vilnius","Kaunas","Berlin"])
+                            r[col] = rnd.choice(["Vilnius","Kaunas","Berlin"])
                         else:
-                            row[col] = ""
+                            r[col] = ""
                     else:
                         if h == "Laikas nuo":
-                            row[col] = f"{rnd.randint(7,9):02d}:00"
+                            r[col] = f"{rnd.randint(7,9):02d}:00"
                         elif h == "Krauti km":
-                            row[col] = rnd.randint(20,120)
+                            r[col] = rnd.randint(20,120)
                         elif h == "Frachtas":
-                            row[col] = round(rnd.uniform(800,1200),2)
+                            r[col] = round(rnd.uniform(800,1200),2)
                         else:
-                            row[col] = ""
-            rows.append(row)
+                            r[col] = ""
+            rows.append(r)
             row_num += 1
 
-    # Sukuriam DataFrame
     df = pd.DataFrame(rows).set_index("#", drop=False)
 
     # Konfigūruojam Ag-Grid
     gb = GridOptionsBuilder.from_dataframe(df)
     gb.configure_default_column(editable=True, resizable=True)
-    # neleidžiam redaguoti pačio part stulpelio
     gb.configure_column("part", editable=False, hide=True)
 
-    # uždedam rowspan funkciją bendriesiems stulpeliams
     js_rowspan = JsCode("""
     function(params) {
         return params.data.part === 1 ? 2 : 0;
     }
     """)
-    for h in common_headers + ["#"]:
-        gb.configure_column(
-            h,
-            rowSpan=js_rowspan,
-            editable=(h != "#"),  # jei norite neleist redaguoti numerio, editable=False
-        )
+    # Pridedam rowspan bendriesiems ir numerio stulpeliui
+    for h in ["#"] + common_headers:
+        gb.configure_column(h, rowSpan=js_rowspan, editable=(h != "#"))
 
     gridOptions = gb.build()
 
@@ -142,22 +134,16 @@ def show(conn, c):
     grid_response = AgGrid(
         df,
         gridOptions=gridOptions,
-        enable_enterprise_modules=False,
+        allow_unsafe_jscode=True,
         fit_columns_on_grid_load=True,
-        allow_unsafe_jscode=True,  # reikalinga JsCode
+        enable_enterprise_modules=False,
         height=600
     )
 
     edited = pd.DataFrame(grid_response["data"])
 
-    # Mygtukas įrašymui
     if st.button("Įrašyti pakeitimus"):
-        # čia panaudokite `edited` DataFrame, kad atnaujintumėte savo DB
-        # pvz.:
-        # for _, row in edited.iterrows():
-        #     c.execute("UPDATE ...", params=...)
-        # conn.commit()
-
-        st.success("Pakeitimai sėkmingai įrašyti į duomenų bazę.")
-
-    st.info("Išsaugotos lentelės versijos galite rasti savo DB. Merged cells (rowspan) veikia bendriesiems stulpeliams.")
+        # Čia įrašyk edited į savo DB
+        # pvz.: for _, row in edited.iterrows(): c.execute(...)
+        conn.commit()
+        st.success("Pakeitimai sėkmingai įrašyti į DB.")

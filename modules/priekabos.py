@@ -7,7 +7,7 @@ from datetime import date
 def show(conn, c):
     st.title("DISPO – Priekabų valdymas")
 
-    # Ensure needed columns
+    # 1) Ensure needed columns exist
     existing = [r[1] for r in c.execute("PRAGMA table_info(priekabos)").fetchall()]
     extras = {
         'priekabu_tipas': 'TEXT',
@@ -15,6 +15,7 @@ def show(conn, c):
         'marke': 'TEXT',
         'pagaminimo_metai': 'TEXT',
         'tech_apziura': 'TEXT',
+        'draudimas': 'TEXT',
         'priskirtas_vilkikas': 'TEXT'
     }
     for col, typ in extras.items():
@@ -34,15 +35,15 @@ def show(conn, c):
 
     # Title + new button
     title_col, add_col = st.columns([9,1])
-    title_col.write("### ")
+    title_col.title("DISPO – Priekabų valdymas")
     add_col.button("➕ Pridėti priekabą", on_click=new)
 
-    # Detail view
+    # Detail view (edit or new)
     sel = st.session_state.selected_priek
     if sel not in (None, 0):
         df_sel = pd.read_sql_query("SELECT * FROM priekabos WHERE id = ?", conn, params=(sel,))
         if df_sel.empty:
-            st.error("Priekaba nerasta.")
+            st.error("❌ Priekaba nerasta.")
             clear_sel()
             return
         row = df_sel.iloc[0]
@@ -50,17 +51,37 @@ def show(conn, c):
             tip = st.text_input("Tipas", row['priekabu_tipas'])
             num = st.text_input("Numeris", row['numeris'])
             model = st.text_input("Modelis", row['marke'])
-            pr_data = st.date_input("Pirmos registracijos data", value=date.fromisoformat(row['pagaminimo_metai']) if row['pagaminimo_metai'] else None)
-            tech = st.date_input("Tech. apžiūra", value=date.fromisoformat(row['tech_apziura']) if row['tech_apziura'] else None)
-            pv = st.selectbox("Priskirtas vilkikas", [""]+vilkikai_list, index=(vilkikai_list.index(row['priskirtas_vilkikas'])+1 if row['priskirtas_vilkikas'] in vilkikai_list else 0))
+            pr_data = st.date_input(
+                "Pirmos registracijos data", 
+                value=date.fromisoformat(row['pagaminimo_metai']) if row['pagaminimo_metai'] else None
+            )
+            tech = st.date_input(
+                "Tech. apžiūros pabaiga", 
+                value=date.fromisoformat(row['tech_apziura']) if row['tech_apziura'] else None
+            )
+            draud = st.date_input(
+                "Draudimo galiojimo pabaiga", 
+                value=date.fromisoformat(row['draudimas']) if row.get('draudimas') else None
+            )
+            pv = st.selectbox(
+                "Priskirtas vilkikas", [""] + vilkikai_list,
+                index=(vilkikai_list.index(row['priskirtas_vilkikas'])+1 
+                       if row['priskirtas_vilkikas'] in vilkikai_list else 0)
+            )
             col1, col2 = st.columns(2)
+            save = col1.form_submit_button("💾 Išsaugoti pakeitimus")
             back = col2.form_submit_button("🔙 Atgal", on_click=clear_sel)
-            save = col1.form_submit_button("💾 Išsaugoti")
         if save:
             try:
                 c.execute(
-                    "UPDATE priekabos SET priekabu_tipas=?, numeris=?, marke=?, pagaminimo_metai=?, tech_apziura=?, priskirtas_vilkikas=? WHERE id=?",
-                    (tip, num, model, pr_data.isoformat() if pr_data else None, tech.isoformat() if tech else None, pv, sel)
+                    "UPDATE priekabos SET priekabu_tipas=?, numeris=?, marke=?, pagaminimo_metai=?, tech_apziura=?, draudimas=?, priskirtas_vilkikas=? WHERE id=?",
+                    (
+                        tip, num, model,
+                        pr_data.isoformat() if pr_data else None,
+                        tech.isoformat() if tech else None,
+                        draud.isoformat() if draud else None,
+                        pv, sel
+                    )
                 )
                 conn.commit()
                 st.success("✅ Pakeitimai išsaugoti.")
@@ -76,8 +97,9 @@ def show(conn, c):
             num = st.text_input("Numeris")
             model = st.text_input("Modelis")
             pr_data = st.date_input("Pirmos registracijos data", value=None)
-            tech = st.date_input("Tech. apžiūra", value=None)
-            pv = st.selectbox("Priskirtas vilkikas", [""]+vilkikai_list)
+            tech = st.date_input("Tech. apžiūros pabaiga", value=None)
+            draud = st.date_input("Draudimo galiojimo pabaiga", value=None)
+            pv = st.selectbox("Priskirtas vilkikas", [""] + vilkikai_list)
             sub = st.form_submit_button("💾 Išsaugoti priekabą")
         if sub:
             if not num:
@@ -85,8 +107,14 @@ def show(conn, c):
             else:
                 try:
                     c.execute(
-                        "INSERT INTO priekabos(priekabu_tipas, numeris, marke, pagaminimo_metai, tech_apziura, priskirtas_vilkikas) VALUES(?,?,?,?,?,?)",
-                        (tip, num, model or None, pr_data.isoformat() if pr_data else None, tech.isoformat() if tech else None, pv)
+                        "INSERT INTO priekabos(priekabu_tipas, numeris, marke, pagaminimo_metai, tech_apziura, draudimas, priskirtas_vilkikas) VALUES(?,?,?,?,?,?,?)",
+                        (
+                            tip, num, model or None,
+                            pr_data.isoformat() if pr_data else None,
+                            tech.isoformat() if tech else None,
+                            draud.isoformat() if draud else None,
+                            pv
+                        )
                     )
                     conn.commit()
                     st.success("✅ Išsaugota.")
@@ -101,28 +129,50 @@ def show(conn, c):
     if df.empty:
         st.info("ℹ️ Nėra priekabų.")
         return
-    # Display
-    df_disp = df.copy()
-    df_disp.rename(columns={'marke':'Modelis','pagaminimo_metai':'Pirmos registracijos data'}, inplace=True)
-    df_disp['Liko iki tech apžiūros'] = df_disp['tech_apziura'].apply(lambda x: (date.fromisoformat(x)-date.today()).days if x else None)
 
-    # Filters
-    filter_cols = st.columns(len(df_disp.columns)+1)
-    for i,col in enumerate(df_disp.columns): filter_cols[i].text_input(col, key=f"f_{col}")
+    # Prepare display DataFrame
+    df_disp = df.copy()
+    df_disp.rename(
+        columns={
+            'marke': 'Modelis',
+            'pagaminimo_metai': 'Pirmos registracijos data',
+            'tech_apziura': 'Tech. apžiūros pabaiga',
+            'draudimas': 'Draudimo galiojimo pabaiga'
+        },
+        inplace=True
+    )
+    # Days left
+    df_disp['Liko iki tech apžiūros'] = df_disp['Tech. apžiūros pabaiga'].apply(
+        lambda x: (date.fromisoformat(x) - date.today()).days if x else None
+    )
+    df_disp['Liko iki draudimo'] = df_disp['Draudimo galiojimo pabaiga'].apply(
+        lambda x: (date.fromisoformat(x) - date.today()).days if x else None
+    )
+
+    # Split out priskirtas vilkikas? in list it's fine
+
+    # Filters and actions
+    filter_cols = st.columns(len(df_disp.columns) + 1)
+    for i, col in enumerate(df_disp.columns):
+        filter_cols[i].text_input(col, key=f"f_{col}")
     filter_cols[-1].write("")
     df_filt = df_disp.copy()
     for col in df_disp.columns:
-        val = st.session_state.get(f"f_{col}","")
+        val = st.session_state.get(f"f_{col}", "")
         if val:
             df_filt = df_filt[df_filt[col].astype(str).str.contains(val, case=False, na=False)]
-    # Table
-    hdr = st.columns(len(df_filt.columns)+1)
-    for i,col in enumerate(df_filt.columns): hdr[i].markdown(f"**{col}**")
+    hdr = st.columns(len(df_filt.columns) + 1)
+    for i, col in enumerate(df_filt.columns): hdr[i].markdown(f"**{col}**")
     hdr[-1].markdown("**Veiksmai**")
-    for _,row in df_filt.iterrows():
-        row_cols = st.columns(len(df_filt.columns)+1)
-        for i,col in enumerate(df_filt.columns): row_cols[i].write(row[col])
+    for _, row in df_filt.iterrows():
+        row_cols = st.columns(len(df_filt.columns) + 1)
+        for i, col in enumerate(df_filt.columns):
+            row_cols[i].write(row[col])
         row_cols[-1].button("✏️", key=f"edit_{row['id']}", on_click=edit, args=(row['id'],))
-    # CSV
-    csv = df.to_csv(index=False,sep=';').encode('utf-8')
-    st.download_button(label="💾 Eksportuoti kaip CSV", data=csv, file_name="priekabos.csv", mime="text/csv")
+
+    # CSV export
+    csv = df.to_csv(index=False, sep=';').encode('utf-8')
+    st.download_button(
+        label="💾 Eksportuoti kaip CSV", data=csv,
+        file_name="priekabos.csv", mime="text/csv"
+    )

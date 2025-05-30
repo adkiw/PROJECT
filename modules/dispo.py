@@ -1,12 +1,11 @@
-# modules/dispo.py
-
 import streamlit as st
 from datetime import date, timedelta
 import random
 import hashlib
+from streamlit_javascript import st_javascript
 
-def show(conn, c):
-    st.title("DISPO – Planavimo lentelė su grupėmis")
+def show(conn=None, c=None):
+    st.title("DISPO – Planavimo lentelė su grupėmis (redaguojama)")
 
     lt_weekdays = {
         0: "Pirmadienis", 1: "Antradienis", 2: "Trečiadienis",
@@ -41,8 +40,10 @@ def show(conn, c):
 
     num_days = (end_date - start_date).days + 1
     dates = [start_date + timedelta(days=i) for i in range(num_days)]
+
     st.write(f"Rodyti {num_days} dienų nuo {start_date} iki {end_date}.")
 
+    # Lentelės stulpelių pavadinimai
     common_headers = [
         "Transporto grupė", "Ekspedicijos grupės nr.",
         "Vilkiko nr.", "Ekspeditorius",
@@ -56,26 +57,17 @@ def show(conn, c):
         "Kelių išlaidos", "Frachtas"
     ]
 
-    trucks_info = c.execute("""
-        SELECT
-            tg.numeris AS trans_grupe,
-            eg.numeris AS eksp_grupe,
-            v.numeris,
-            e.vardas || ' ' || e.pavarde AS ekspeditorius,
-            t.vardas || ' ' || t.pavarde AS vadybininkas,
-            v.priekaba,
-            (SELECT COUNT(*) FROM vairuotojai WHERE priskirtas_vilkikas = v.numeris) AS vair_sk,
-            42 AS savaitine_atstova
-        FROM vilkikai v
-        LEFT JOIN darbuotojai t ON v.vadybininkas = t.vardas
-        LEFT JOIN grupes tg ON t.grupe = tg.pavadinimas
-        LEFT JOIN darbuotojai e ON v.vairuotojai LIKE '%' || e.vardas || '%'
-        LEFT JOIN grupes eg ON e.grupe = eg.pavadinimas
-    """).fetchall()
+    # DEMO duomenys
+    trucks_info = [
+        ("A1", "G2", "VVK-123", "Jonas Jonaitis", "Petras Petrauskas", "PR-987", 2, 42, ""),
+        ("A2", "G3", "VVK-456", "Ona Onaitytė", "Ieva Ievaitė", "PR-654", 1, 36, ""),
+    ]
 
-    all_eksp = sorted({t[3] for t in trucks_info})
-    sel_eksp = st.multiselect("Filtruok pagal ekspeditorius", options=all_eksp, default=all_eksp)
+    # Saugoma atmintyje: {row_idx}_{date}_{header}: value
+    if "cell_store" not in st.session_state:
+        st.session_state.cell_store = {}
 
+    # STILIUS
     st.markdown("""
     <style>
       .table-container { overflow-x: auto; }
@@ -95,64 +87,93 @@ def show(conn, c):
         top:0;
         z-index:1;
       }
+      input[type='text'] {
+        width: 60px;
+        border: 1px solid #aaa;
+        background: #f9f9f9;
+        text-align: center;
+      }
     </style>
     """, unsafe_allow_html=True)
 
-    def get_rnd(truck: str, day: str) -> random.Random:
-        seed = int(hashlib.md5(f"{truck}-{day}".encode()).hexdigest(), 16)
-        return random.Random(seed)
-
+    # Lentelės generavimas su input laukeliais
+    html = '<div class="table-container"><table>\n'
+    # Pirmas header - raidės
     total_common = len(common_headers)
     total_day_cols = len(dates) * len(day_headers)
     total_all_cols = 1 + total_common + total_day_cols
-
-    html = '<div class="table-container"><table>\n'
     html += "<tr>" + "".join(f"<th>{col_letter(i)}</th>" for i in range(1, total_all_cols + 1)) + "</tr>\n"
-    html += "<tr><th></th><th colspan=\"{}\"></th>".format(total_common)
+    # Header su datom
+    html += "<tr><th></th>" + f"<th colspan='{total_common}'></th>"
     for d in dates:
         wd = lt_weekdays[d.weekday()]
         html += f'<th colspan="{len(day_headers)}">{d:%Y-%m-%d} {wd}</th>'
     html += "</tr>\n"
-
+    # Header su visais po data
     html += "<tr><th>#</th>" + "".join(f"<th>{h}</th>" for h in common_headers)
     for _ in dates:
         for hh in day_headers:
             html += f"<th>{hh}</th>"
     html += "</tr>\n"
 
-    row_num = 1
-    for row in trucks_info:
-        if row[3] not in sel_eksp:
-            continue
-        html += f"<tr><td>{row_num}</td>"
+    # Eilutės su input laukeliais
+    for row_idx, row in enumerate(trucks_info, 1):
+        html += f"<tr><td>{row_idx}</td>"
         for val in row:
             html += f'<td rowspan="2">{val}</td>'
         html += "<td></td>"
         for d in dates:
-            key = d.strftime("%Y-%m-%d")
-            rnd = get_rnd(row[2], key)
-            atv = f"{rnd.randint(0, 23):02d}:{rnd.randint(0, 59):02d}"
-            city = rnd.choice(["Vilnius", "Kaunas", "Berlin"])
-            html += ("<td></td><td></td>"
-                     f"<td>{atv}</td><td></td><td></td>"
-                     f"<td>{city}</td>" + "<td></td>" * 5)
+            d_str = d.strftime("%Y-%m-%d")
+            for col in day_headers:
+                key = f"{row_idx}_{d_str}_{col}"
+                value = st.session_state.cell_store.get(key, "")
+                html += (
+                    f"<td><input type='text' value='{value}' "
+                    f"onchange=\"updateCell('{row_idx}','{d_str}','{col}', this.value)\"></td>"
+                )
         html += "</tr>\n"
 
-        html += f"<tr><td>{row_num + 1}</td>" + "<td></td>" * total_common
+        # Antra eilutė gali būti kitokia (pvz. tuščia ar papildomi input'ai)
+        html += f"<tr><td></td>" + "<td></td>" * total_common
         for d in dates:
-            key = d.strftime("%Y-%m-%d")
-            rnd = get_rnd(row[2], key)
-            t1 = f"{rnd.randint(7, 9):02d}:00"
-            kms = rnd.randint(20, 120)
-            costs = kms * 5
-            fr = round(rnd.uniform(800, 1200), 2)
-            dest = rnd.choice(["Riga", "Poznan"])
-            html += ("<td>9</td><td>6</td>"
-                     f"<td>{t1}</td><td>{t1}</td><td>16:00</td>"
-                     f"<td>{dest}</td><td></td>"
-                     f"<td>{kms}</td><td>{costs}</td><td></td><td>{fr}</td>")
+            d_str = d.strftime("%Y-%m-%d")
+            for col in day_headers:
+                key = f"{row_idx}_b_{d_str}_{col}"
+                value = st.session_state.cell_store.get(key, "")
+                html += (
+                    f"<td><input type='text' value='{value}' "
+                    f"onchange=\"updateCell('{row_idx}_b','{d_str}','{col}', this.value)\"></td>"
+                )
         html += "</tr>\n"
-        row_num += 2
 
     html += "</table></div>"
+
+    # JS komunikacija per streamlit-javascript
+    html += """
+    <script>
+    function updateCell(rowIdx, date, col, value) {
+        if (window.parent) {
+            window.parent.postMessage(
+                {
+                    isStreamlitMessage: true,
+                    type: 'streamlit:setComponentValue',
+                    value: {row: rowIdx, date: date, col: col, value: value}
+                }, '*'
+            );
+        }
+    }
+    </script>
+    """
+
     st.markdown(html, unsafe_allow_html=True)
+
+    # Gauna event iš JS – įrašo į session_state (galima pakeisti į DB)
+    cell_update = st_javascript(js_code="", args={})
+    if cell_update and "value" in cell_update and cell_update["value"]:
+        key = f"{cell_update['value']['row']}_{cell_update['value']['date']}_{cell_update['value']['col']}"
+        st.session_state.cell_store[key] = cell_update['value']['value']
+        st.success(f"Išsaugota: {key} → {cell_update['value']['value']}")
+
+    # Galima išvesti visą dabartinį „saugyklos“ turinį
+    with st.expander("Žiūrėti visus įvestus duomenis"):
+        st.write(st.session_state.cell_store)

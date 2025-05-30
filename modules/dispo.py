@@ -1,3 +1,5 @@
+# modules/dispo.py
+
 import streamlit as st
 from datetime import date, timedelta
 import random
@@ -93,77 +95,64 @@ def show(conn, c):
         top:0;
         z-index:1;
       }
-      input[type='text'] {
-        width: 60px;
-        border: 1px solid #aaa;
-        background: #f9f9f9;
-        text-align: center;
-      }
     </style>
     """, unsafe_allow_html=True)
 
-    # Visi input duomenys
-    inputs = {}
+    def get_rnd(truck: str, day: str) -> random.Random:
+        seed = int(hashlib.md5(f"{truck}-{day}".encode()).hexdigest(), 16)
+        return random.Random(seed)
 
-    with st.form("dispo_form"):
-        html = '<div class="table-container"><table>\n'
-        total_common = len(common_headers)
-        total_day_cols = len(dates) * len(day_headers)
-        total_all_cols = 1 + total_common + total_day_cols
-        html += "<tr>" + "".join(f"<th>{col_letter(i)}</th>" for i in range(1, total_all_cols + 1)) + "</tr>\n"
-        html += "<tr><th></th><th colspan=\"{}\"></th>".format(total_common)
+    total_common = len(common_headers)
+    total_day_cols = len(dates) * len(day_headers)
+    total_all_cols = 1 + total_common + total_day_cols
+
+    html = '<div class="table-container"><table>\n'
+    html += "<tr>" + "".join(f"<th>{col_letter(i)}</th>" for i in range(1, total_all_cols + 1)) + "</tr>\n"
+    html += "<tr><th></th><th colspan=\"{}\"></th>".format(total_common)
+    for d in dates:
+        wd = lt_weekdays[d.weekday()]
+        html += f'<th colspan="{len(day_headers)}">{d:%Y-%m-%d} {wd}</th>'
+    html += "</tr>\n"
+
+    html += "<tr><th>#</th>" + "".join(f"<th>{h}</th>" for h in common_headers)
+    for _ in dates:
+        for hh in day_headers:
+            html += f"<th>{hh}</th>"
+    html += "</tr>\n"
+
+    row_num = 1
+    for row in trucks_info:
+        if row[3] not in sel_eksp:
+            continue
+        html += f"<tr><td>{row_num}</td>"
+        for val in row:
+            html += f'<td rowspan="2">{val}</td>'
+        html += "<td></td>"
         for d in dates:
-            wd = lt_weekdays[d.weekday()]
-            html += f'<th colspan="{len(day_headers)}">{d:%Y-%m-%d} {wd}</th>'
+            key = d.strftime("%Y-%m-%d")
+            rnd = get_rnd(row[2], key)
+            atv = f"{rnd.randint(0, 23):02d}:{rnd.randint(0, 59):02d}"
+            city = rnd.choice(["Vilnius", "Kaunas", "Berlin"])
+            html += ("<td></td><td></td>"
+                     f"<td>{atv}</td><td></td><td></td>"
+                     f"<td>{city}</td>" + "<td></td>" * 5)
         html += "</tr>\n"
 
-        html += "<tr><th>#</th>" + "".join(f"<th>{h}</th>" for h in common_headers)
-        for _ in dates:
-            for hh in day_headers:
-                html += f"<th>{hh}</th>"
+        html += f"<tr><td>{row_num + 1}</td>" + "<td></td>" * total_common
+        for d in dates:
+            key = d.strftime("%Y-%m-%d")
+            rnd = get_rnd(row[2], key)
+            t1 = f"{rnd.randint(7, 9):02d}:00"
+            kms = rnd.randint(20, 120)
+            costs = kms * 5
+            fr = round(rnd.uniform(800, 1200), 2)
+            dest = rnd.choice(["Riga", "Poznan"])
+            html += ("<td>9</td><td>6</td>"
+                     f"<td>{t1}</td><td>{t1}</td><td>16:00</td>"
+                     f"<td>{dest}</td><td></td>"
+                     f"<td>{kms}</td><td>{costs}</td><td></td><td>{fr}</td>")
         html += "</tr>\n"
+        row_num += 2
 
-        row_num = 1
-        for row in trucks_info:
-            if row[3] not in sel_eksp:
-                continue
-            html += f"<tr><td>{row_num}</td>"
-            for val in row:
-                html += f'<td rowspan="2">{val}</td>'
-            html += "<td></td>"
-            for d in dates:
-                d_str = d.strftime("%Y-%m-%d")
-                for col in day_headers:
-                    key = f"a_{row_num}_{d_str}_{col}"
-                    value = st.session_state.get(key, "")
-                    # čia input laukelis, kuris bus įterptas į HTML
-                    inputs[key] = st.text_input("", value=value, key=key)
-                    html += f"<td>{{{key}}}</td>"
-            html += "</tr>\n"
-
-            html += f"<tr><td>{row_num + 1}</td>" + "<td></td>" * total_common
-            for d in dates:
-                d_str = d.strftime("%Y-%m-%d")
-                for col in day_headers:
-                    key = f"b_{row_num}_{d_str}_{col}"
-                    value = st.session_state.get(key, "")
-                    inputs[key] = st.text_input("", value=value, key=key)
-                    html += f"<td>{{{key}}}</td>"
-            html += "</tr>\n"
-            row_num += 2
-
-        html += "</table></div>"
-
-        # Input reikšmės į HTML
-        for k, v in inputs.items():
-            html = html.replace(f"{{{k}}}", v)
-
-        st.markdown(html, unsafe_allow_html=True)
-        submitted = st.form_submit_button("Išsaugoti")
-        if submitted:
-            st.success("Duomenys išsaugoti!")
-            st.write(inputs)  # arba rašyti į DB
-
-    # Galima parodyti visus įvestus duomenis
-    with st.expander("Žiūrėti visus įvestus duomenis"):
-        st.write(inputs)
+    html += "</table></div>"
+    st.markdown(html, unsafe_allow_html=True)

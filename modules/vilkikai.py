@@ -22,9 +22,9 @@ def show(conn, c):
     conn.commit()
 
     # 2) Dropdown data
-    priekabu_list       = [r[0] for r in c.execute("SELECT numeris FROM priekabos").fetchall()]
-    markiu_list         = [r[0] for r in c.execute("SELECT reiksme FROM lookup WHERE kategorija = 'Markė'").fetchall()]
-    vairuotoju_list    = [f"{r[1]} {r[2]}" for r in c.execute("SELECT id, vardas, pavarde FROM vairuotojai").fetchall()]
+    priekabu_list    = [r[0] for r in c.execute("SELECT numeris FROM priekabos").fetchall()]
+    markiu_list      = [r[0] for r in c.execute("SELECT reiksme FROM lookup WHERE kategorija = 'Markė'").fetchall()]
+    vairuotoju_list = [f"{r[1]} {r[2]}" for r in c.execute("SELECT id, vardas, pavarde FROM vairuotojai").fetchall()]
 
     # Callbacks
     def clear_selection():
@@ -46,18 +46,16 @@ def show(conn, c):
     # 5) List view
     if st.session_state.selected_vilk is None:
         df = pd.read_sql_query("SELECT * FROM vilkikai ORDER BY tech_apziura ASC", conn)
-        hidden = ["pagaminimo_metai", "tech_apziura", "draudimas", "vadybininkas", "vairuotojai", "priekaba"]
-        df_disp = df.drop(columns=hidden, errors="ignore")
-
-        if df_disp.empty:
+        if df.empty:
             st.info("🔍 Kol kas nėra vilkikų.")
         else:
-            # Filters
-            filter_cols = st.columns(len(df_disp.columns) + 1)
-            for i, col in enumerate(df_disp.columns):
+            # Filters for all columns
+            filter_cols = st.columns(len(df.columns) + 1)
+            for i, col in enumerate(df.columns):
                 filter_cols[i].text_input(col, key=f"f_{col}")
             filter_cols[-1].write("")
-            for col in df_disp.columns:
+            df_disp = df.copy()
+            for col in df.columns:
                 val = st.session_state.get(f"f_{col}", "")
                 if val:
                     df_disp = df_disp[df_disp[col].astype(str).str.contains(val, case=False, na=False)]
@@ -76,7 +74,7 @@ def show(conn, c):
                     "✏️", key=f"edit_{row['numeris']}", on_click=edit_vilk, args=(row['numeris'],)
                 )
 
-            # CSV export including remaining days columns
+            # CSV export with days left
             df['dienu_liko_tech']  = df['tech_apziura'].apply(lambda x: (date.fromisoformat(x) - date.today()).days if x else None)
             df['dienu_liko_draud'] = df['draudimas'].apply(lambda x: (date.fromisoformat(x) - date.today()).days if x else None)
             csv = df.to_csv(index=False, sep=';').encode('utf-8')
@@ -122,27 +120,25 @@ def show(conn, c):
     with st.form("vilkiku_forma", clear_on_submit=False):
         col1, col2 = st.columns(2)
         numeris = col1.text_input("Vilkiko numeris", value=("" if is_new else vilk['numeris']))
-        # Marke
-        opts_m = [""] + markiu_list
-        idx_m  = 0 if is_new or vilk.get('marke') not in markiu_list else opts_m.index(vilk['marke'])
-        marke  = col1.selectbox("Markė", opts_m, index=idx_m)
-        pag_idx = 0
-        pm_val = str(vilk['pagaminimo_metai']) if not is_new and vilk['pagaminimo_metai'] is not None else ""
+        opts_m  = [""] + markiu_list
+        idx_m   = 0 if is_new or vilk.get('marke') not in markiu_list else opts_m.index(vilk['marke'])
+        marke   = col1.selectbox("Markė", opts_m, index=idx_m)
+        pm_val  = str(vilk['pagaminimo_metai']) if not is_new and vilk['pagaminimo_metai'] is not None else ""
         pag_metai = col1.text_input("Pagaminimo metai", value=pm_val)
-        tech_date  = col1.date_input("Tech. apžiūros pabaiga", value=(date.fromisoformat(vilk['tech_apziura']) if not is_new and vilk['tech_apziura'] else date.today()), key="tech_date")
-        draud_date = col1.date_input("Draudimo galiojimo pabaiga", value=(date.fromisoformat(vilk['draudimas']) if not is_new and vilk['draudimas'] else date.today()), key="draud_date")
-        
+        # Dates without defaults for new
+        tech_initial = date.fromisoformat(vilk['tech_apziura']) if not is_new and vilk['tech_apziura'] else None
+        tech_date    = col1.date_input("Tech. apžiūros pabaiga", value=tech_initial, key="tech_date")
+        draud_initial = date.fromisoformat(vilk['draudimas']) if not is_new and vilk['draudimas'] else None
+        draud_date    = col1.date_input("Draudimo galiojimo pabaiga", value=draud_initial, key="draud_date")
+
         vadyb = col2.text_input("Transporto vadybininkas", value=("" if is_new else vilk['vadybininkas']))
         # Vairuotojai
         v1_opts = [""] + vairuotoju_list
-        v1_idx = 0
-        v2_idx = 0
+        v1_idx, v2_idx = 0, 0
         if not is_new and vilk['vairuotojai']:
             parts = vilk['vairuotojai'].split(", ")
-            if parts and parts[0] in vairuotoju_list:
-                v1_idx = v1_opts.index(parts[0])
-            if len(parts) > 1 and parts[1] in vairuotoju_list:
-                v2_idx = v1_opts.index(parts[1])
+            if parts and parts[0] in vairuotoju_list: v1_idx = v1_opts.index(parts[0])
+            if len(parts)>1 and parts[1] in vairuotoju_list: v2_idx = v1_opts.index(parts[1])
         v1 = col2.selectbox("Vairuotojas 1", v1_opts, index=v1_idx, key="v1")
         v2 = col2.selectbox("Vairuotojas 2", v1_opts, index=v2_idx, key="v2")
         # Priekaba
@@ -152,64 +148,44 @@ def show(conn, c):
             pr_opts.append(
                 f"🔴 {num} ({', '.join(assigned)})" if assigned else f"🟢 {num} (laisva)"
             )
-        # set index based on existing
         pr_idx = 0
         if not is_new and vilk['priekaba']:
-            for i, opt in enumerate(pr_opts):
-                if opt.split()[1] == vilk['priekaba']:
-                    pr_idx = i
-                    break
+            for i,opt in enumerate(pr_opts):
+                if opt.split()[1]==vilk['priekaba']: pr_idx=i; break
         sel_pr = col2.selectbox("Priekaba", pr_opts, index=pr_idx)
 
+        st.form_submit_button("🔙 Grįžti į sąrašą", on_click=clear_selection)
         submit = st.form_submit_button("📅 Išsaugoti vilkiką")
-        back = st.form_submit_button("🔙 Grįžti į sąrašą")
 
     if submit:
         if not numeris:
             st.warning("⚠️ Įveskite vilkiko numerį.")
         else:
             draud = ", ".join(filter(None, [v1, v2])) or None
-            prn = None
-            if sel_pr.startswith(("🟢","🔴")):
-                prn = sel_pr.split()[1]
+            prn = sel_pr.split()[1] if sel_pr.startswith(("🟢","🔴")) else None
             try:
                 if is_new:
                     c.execute(
                         "INSERT INTO vilkikai (numeris, marke, pagaminimo_metai, tech_apziura, draudimas, vadybininkas, vairuotojai, priekaba)"
-                        " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                        (
-                            numeris,
-                            marke or None,
-                            int(pag_metai) if pag_metai else None,
-                            tech_date.isoformat(),
-                            draud_date.isoformat(),
-                            vadyb or None,
-                            draud,
-                            prn
-                        )
+                        " VALUES (?,?,?,?,?,?,?,?)",
+                        (numeris, marke or None, int(pag_metai) if pag_metai else None,
+                         tech_date.isoformat() if tech_date else None,
+                         draud_date.isoformat() if draud_date else None,
+                         vadyb or None, draud, prn)
                     )
                 else:
                     c.execute(
                         "UPDATE vilkikai SET marke=?, pagaminimo_metai=?, tech_apziura=?, draudimas=?, vadybininkas=?, vairuotojai=?, priekaba=? WHERE numeris=?",
-                        (
-                            marke or None,
-                            int(pag_metai) if pag_metai else None,
-                            tech_date.isoformat(),
-                            draud_date.isoformat(),
-                            vadyb or None,
-                            draud,
-                            prn,
-                            sel
-                        )
+                        (marke or None, int(pag_metai) if pag_metai else None,
+                         tech_date.isoformat() if tech_date else None,
+                         draud_date.isoformat() if draud_date else None,
+                         vadyb or None, draud, prn, sel)
                     )
                 conn.commit()
                 st.success("✅ Vilkikas išsaugotas sėkmingai.")
-                days_t = (tech_date - date.today()).days
-                st.info(f"🔧 Dienų iki tech. apžiūros liko: {days_t}")
-                days_d = (draud_date - date.today()).days
-                st.info(f"🛡️ Dienų iki draudimo pabaigos liko: {days_d}")
-                clear_selection()
+                if tech_date:
+                    st.info(f"🔧 Dienų iki tech. apžiūros liko: {(tech_date-date.today()).days}")
+                if draud_date:
+                    st.info(f"🛡️ Dienų iki draudimo pabaigos liko: {(draud_date-date.today()).days}")
             except Exception as e:
                 st.error(f"❌ Klaida saugant: {e}")
-    elif back:
-        clear_selection()

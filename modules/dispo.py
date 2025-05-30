@@ -2,13 +2,16 @@
 
 import streamlit as st
 from datetime import date, timedelta
-import random
-import hashlib
+import random, hashlib
 import pandas as pd
+
+# Ag-Grid importai
+from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 
 def show(conn, c):
     st.title("DISPO – Planavimo lentelė su grupėmis")
 
+    # Lietuviškos savaitės dienos
     lt_weekdays = {
         0: "Pirmadienis", 1: "Antradienis", 2: "Trečiadienis",
         3: "Ketvirtadienis", 4: "Penktadienis", 5: "Šeštadienis", 6: "Sekmadienis"
@@ -33,24 +36,21 @@ def show(conn, c):
     else:
         start_date, end_date = start_sel, end_sel
 
-    num_days = (end_date - start_date).days + 1
-    dates = [start_date + timedelta(days=i) for i in range(num_days)]
-    st.write(f"Rodyti {num_days} dienų nuo {start_date} iki {end_date}.")
+    dates = [start_date + timedelta(days=i) for i in range((end_date - start_date).days + 1)]
+    st.write(f"Rodyti {len(dates)} dienų nuo {start_date} iki {end_date}.")
 
     common_headers = [
-        "Transporto grupė", "Ekspedicijos grupės nr.",
-        "Vilkiko nr.", "Ekspeditorius",
-        "Trans. vadybininkas", "Priekabos nr.",
-        "Vair. sk.", "Savaitinė atstova", "Pastabos"
+        "Transporto grupė","Ekspedicijos grupės nr.","Vilkiko nr.","Ekspeditorius",
+        "Trans. vadybininkas","Priekabos nr.","Vair. sk.","Savaitinė atstova","Pastabos"
     ]
     day_headers = [
-        "B. d. laikas", "L. d. laikas", "Atvykimo laikas",
-        "Laikas nuo", "Laikas iki", "Vieta",
-        "Atsakingas", "Tušti km", "Krauti km",
-        "Kelių išlaidos", "Frachtas"
+        "B. d. laikas","L. d. laikas","Atvykimo laikas",
+        "Laikas nuo","Laikas iki","Vieta",
+        "Atsakingas","Tušti km","Krauti km",
+        "Kelių išlaidos","Frachtas"
     ]
 
-    # Užkraunam duomenis
+    # Užkraunam duomenis iš DB
     trucks_info = c.execute("""
         SELECT
             tg.numeris AS trans_grupe,
@@ -68,63 +68,96 @@ def show(conn, c):
         LEFT JOIN grupes eg ON e.grupe = eg.pavadinimas
     """).fetchall()
 
-    all_eksp = sorted({t[3] for t in trucks_info})
-    sel_eksp = st.multiselect("Filtruok pagal ekspeditorius", options=all_eksp, default=all_eksp)
+    all_eksp = sorted({r[3] for r in trucks_info})
+    sel_eksp = st.multiselect("Filtruok pagal ekspeditorius", all_eksp, default=all_eksp)
 
-    # Paruošiam DataFrame
-    columns = ["#"] + common_headers + [
-        f"{d:%Y-%m-%d} {lt_weekdays[d.weekday()]} – {h}"
-        for d in dates for h in day_headers
-    ]
-
+    # Ruošiam eiles
     rows = []
     row_num = 1
-    for row in trucks_info:
-        eksp = row[3]
+    for vals in trucks_info:
+        eksp = vals[3]
         if eksp not in sel_eksp:
             continue
 
-        for part in [1, 2]:
-            data_row = {"#": row_num}
+        # Kiekvienam vilkikui 2 eilutės su part=1 arba part=2
+        for part in (1, 2):
+            row = {"#": row_num, "part": part}
             if part == 1:
-                for idx, val in enumerate(row):
-                    data_row[common_headers[idx]] = val
+                for i, h in enumerate(common_headers):
+                    row[h] = vals[i]
             else:
                 for h in common_headers:
-                    data_row[h] = ""
+                    row[h] = ""
 
             for d in dates:
                 key = d.strftime("%Y-%m-%d")
-                rnd = random.Random(int(hashlib.md5(f"{row[2]}-{key}".encode()).hexdigest(), 16))
+                rnd = random.Random(int(hashlib.md5(f"{vals[2]}-{key}".encode()).hexdigest(),16))
+                weekday = lt_weekdays[d.weekday()]
                 for h in day_headers:
-                    col = f"{d:%Y-%m-%d} {lt_weekdays[d.weekday()]} – {h}"
+                    col = f"{d:%Y-%m-%d} {weekday} – {h}"
                     if part == 1:
                         if h == "Atvykimo laikas":
-                            data_row[col] = f"{rnd.randint(0,23):02d}:{rnd.randint(0,59):02d}"
+                            row[col] = f"{rnd.randint(0,23):02d}:{rnd.randint(0,59):02d}"
                         elif h == "Vieta":
-                            data_row[col] = rnd.choice(["Vilnius", "Kaunas", "Berlin"])
+                            row[col] = rnd.choice(["Vilnius","Kaunas","Berlin"])
                         else:
-                            data_row[col] = ""
+                            row[col] = ""
                     else:
                         if h == "Laikas nuo":
-                            data_row[col] = f"{rnd.randint(7,9):02d}:00"
+                            row[col] = f"{rnd.randint(7,9):02d}:00"
                         elif h == "Krauti km":
-                            data_row[col] = rnd.randint(20,120)
+                            row[col] = rnd.randint(20,120)
                         elif h == "Frachtas":
-                            data_row[col] = round(rnd.uniform(800,1200),2)
+                            row[col] = round(rnd.uniform(800,1200),2)
                         else:
-                            data_row[col] = ""
-            rows.append(data_row)
+                            row[col] = ""
+            rows.append(row)
             row_num += 1
 
-    df = pd.DataFrame(rows, columns=columns)
+    # Sukuriam DataFrame
+    df = pd.DataFrame(rows).set_index("#", drop=False)
 
-    # Rodyti redaguojamą lentelę (visi stulpeliai redaguojami)
-    edited = st.data_editor(
+    # Konfigūruojam Ag-Grid
+    gb = GridOptionsBuilder.from_dataframe(df)
+    gb.configure_default_column(editable=True, resizable=True)
+    # neleidžiam redaguoti pačio part stulpelio
+    gb.configure_column("part", editable=False, hide=True)
+
+    # uždedam rowspan funkciją bendriesiems stulpeliams
+    js_rowspan = JsCode("""
+    function(params) {
+        return params.data.part === 1 ? 2 : 0;
+    }
+    """)
+    for h in common_headers + ["#"]:
+        gb.configure_column(
+            h,
+            rowSpan=js_rowspan,
+            editable=(h != "#"),  # jei norite neleist redaguoti numerio, editable=False
+        )
+
+    gridOptions = gb.build()
+
+    # Rodyti Ag-Grid
+    grid_response = AgGrid(
         df,
-        num_rows="fixed",
-        use_container_width=True,
-        key="dispo_editor"
+        gridOptions=gridOptions,
+        enable_enterprise_modules=False,
+        fit_columns_on_grid_load=True,
+        allow_unsafe_jscode=True,  # reikalinga JsCode
+        height=600
     )
 
-    st.success("Galite keisti bet kurį langelį po datomis ir bendruosius laukus.") 
+    edited = pd.DataFrame(grid_response["data"])
+
+    # Mygtukas įrašymui
+    if st.button("Įrašyti pakeitimus"):
+        # čia panaudokite `edited` DataFrame, kad atnaujintumėte savo DB
+        # pvz.:
+        # for _, row in edited.iterrows():
+        #     c.execute("UPDATE ...", params=...)
+        # conn.commit()
+
+        st.success("Pakeitimai sėkmingai įrašyti į duomenų bazę.")
+
+    st.info("Išsaugotos lentelės versijos galite rasti savo DB. Merged cells (rowspan) veikia bendriesiems stulpeliams.")

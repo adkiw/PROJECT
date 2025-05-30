@@ -29,7 +29,12 @@ def show(conn, c):
     # Session state
     if 'selected_priek' not in st.session_state:
         st.session_state.selected_priek = None
-    def clear_sel(): st.session_state.selected_priek = None
+    def clear_sel():
+        st.session_state.selected_priek = None
+        # clear filters too
+        for key in list(st.session_state):
+            if key.startswith("f_"):
+                st.session_state[key] = ""
     def new(): st.session_state.selected_priek = 0
     def edit(id): st.session_state.selected_priek = id
 
@@ -38,8 +43,8 @@ def show(conn, c):
     title_col.write("### ")
     add_col.button("➕ Pridėti priekabą", on_click=new)
 
-    # Detail view (edit existing)
     sel = st.session_state.selected_priek
+    # Detail view (edit existing)
     if sel not in (None, 0):
         df_sel = pd.read_sql_query("SELECT * FROM priekabos WHERE id = ?", conn, params=(sel,))
         if df_sel.empty:
@@ -69,7 +74,7 @@ def show(conn, c):
             )
             col1, col2 = st.columns(2)
             save = col1.form_submit_button("💾 Išsaugoti")
-            back = col2.form_submit_button("🔙 Atgal", on_click=clear_sel)
+            back = col2.form_submit_button("🔙 Grįžti į sąrašą", on_click=clear_sel)
         if save:
             try:
                 c.execute(
@@ -99,8 +104,10 @@ def show(conn, c):
             tech = st.date_input("Tech. apžiūra", value=None)
             draud_date = st.date_input("Draudimo galiojimo pabaiga", value=None)
             pv = st.selectbox("Priskirtas vilkikas", [""]+vilkikai_list)
-            sub = st.form_submit_button("💾 Išsaugoti priekabą")
-        if sub:
+            col1, col2 = st.columns(2)
+            save = col1.form_submit_button("💾 Išsaugoti priekabą")
+            back = col2.form_submit_button("🔙 Grįžti į sąrašą", on_click=clear_sel)
+        if save:
             if not num:
                 st.warning("⚠️ Įveskite numerį.")
             else:

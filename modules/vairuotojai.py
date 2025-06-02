@@ -40,9 +40,8 @@ def show(conn, c):
 
     def clear_sel():
         st.session_state.selected_vair = None
-        for key in list(st.session_state):
-            if key.startswith("f_"):
-                st.session_state[key] = ""
+        # NEMAZINTI st.session_state formos laukelių, kad išliktų įvesti duomenys po klaidos
+
     def new(): st.session_state.selected_vair = 0
     def edit(id): st.session_state.selected_vair = id
 
@@ -52,7 +51,6 @@ def show(conn, c):
 
     sel = st.session_state.selected_vair
 
-    # Pagalbinė funkcija: ar vilkikas jau priskirtas kaip pagrindinis arba kaip mokinys
     def vilkikas_jau_priskirtas(vilkikas, exclude_id=None, kaip_laukas='priskirtas_vilkikas'):
         if not vilkikas:
             return False
@@ -72,26 +70,29 @@ def show(conn, c):
             return
         row = df_sel.iloc[0]
         with st.form("edit_form", clear_on_submit=False):
-            vardas = st.text_input("Vardas", row['vardas'])
-            pavarde = st.text_input("Pavardė", row['pavarde'])
+            vardas = st.text_input("Vardas", row['vardas'], key="vardas")
+            pavarde = st.text_input("Pavardė", row['pavarde'], key="pavarde")
             gim_data = st.date_input(
                 "Gimimo data",
-                value=date.fromisoformat(row['gimimo_metai']) if row['gimimo_metai'] else None,
-                min_value=date(1950, 1, 1)
+                value=date.fromisoformat(row['gimimo_metai']) if row['gimimo_metai'] else date(1980,1,1),
+                min_value=date(1950, 1, 1),
+                key="gim_data"
             )
             tautybes_opts = [f"{name} ({code})" for name, code in TAUTYBES]
             tautybe_index = 0
             if row['tautybe']:
                 for idx, v in enumerate(tautybes_opts):
                     if row['tautybe'] in v: tautybe_index = idx; break
-            tautybe = st.selectbox("Tautybė", tautybes_opts, index=tautybe_index)
+            tautybe = st.selectbox("Tautybė", tautybes_opts, index=tautybe_index, key="tautybe")
             pr_vilk = st.selectbox(
                 "Priskirti vilkiką", [""] + vilkikai_list,
-                index=(vilkikai_list.index(row['priskirtas_vilkikas'])+1 if row['priskirtas_vilkikas'] in vilkikai_list else 0)
+                index=(vilkikai_list.index(row['priskirtas_vilkikas'])+1 if row['priskirtas_vilkikas'] in vilkikai_list else 0),
+                key="pr_vilk"
             )
             kaip_mokinys = st.selectbox(
                 "Kaip mokinys", [""] + vilkikai_list,
-                index=(vilkikai_list.index(row['kaip_mokinys'])+1 if row['kaip_mokinys'] in vilkikai_list else 0)
+                index=(vilkikai_list.index(row['kaip_mokinys'])+1 if row['kaip_mokinys'] in vilkikai_list else 0),
+                key="kaip_mokinys"
             )
             kadencijos_pabaiga, atostogu_pabaiga = None, None
             if pr_vilk:
@@ -111,18 +112,14 @@ def show(conn, c):
             back = col2.form_submit_button("🔙 Grįžti į sąrašą", on_click=clear_sel)
         if save:
             error = False
-            # Tikrinimai:
-            # Pagrindinis vilkikas negali būti kitam pagrindiniam
             if pr_vilk:
                 if vilkikas_jau_priskirtas(pr_vilk, exclude_id=sel, kaip_laukas='priskirtas_vilkikas'):
                     st.error("❌ Šis vilkikas jau priskirtas kitam pagrindiniam vairuotojui!")
                     error = True
-            # Kaip mokinys negali būti kitam mokiniui
             if kaip_mokinys:
                 if vilkikas_jau_priskirtas(kaip_mokinys, exclude_id=sel, kaip_laukas='kaip_mokinys'):
                     st.error("❌ Šis vilkikas jau pasirinktas kitam vairuotojui kaip mokinio vilkikas!")
                     error = True
-            # Negali abiejuose laukuose būti tas pats vilkikas
             if pr_vilk and kaip_mokinys and pr_vilk == kaip_mokinys:
                 st.error("❌ Negalima pasirinkti to paties vilkiko abiem laukams!")
                 error = True
@@ -149,23 +146,46 @@ def show(conn, c):
 
     # New form
     if sel == 0:
+        # Visų laukų reikšmes bandome pasiimti iš st.session_state, kad po klaidos viskas liktų įvesta
+        vardas_v = st.session_state.get("vardas", "")
+        pavarde_v = st.session_state.get("pavarde", "")
+        gim_data_v = st.session_state.get("gim_data", date(1980,1,1))
+        tautybe_v = st.session_state.get("tautybe", "")
+        pr_vilk_v = st.session_state.get("pr_vilk", "")
+        kaip_mokinys_v = st.session_state.get("kaip_mokinys", "")
+        kad_pab_v = st.session_state.get("kad_pab", date.today())
+        atost_pab_v = st.session_state.get("atost_pab", date.today())
+
         with st.form("new_form", clear_on_submit=True):
-            vardas = st.text_input("Vardas")
-            pavarde = st.text_input("Pavardė")
-            gim_data = st.date_input("Gimimo data", value=None, min_value=date(1950,1,1))
+            vardas = st.text_input("Vardas", value=vardas_v, key="vardas")
+            pavarde = st.text_input("Pavardė", value=pavarde_v, key="pavarde")
+            gim_data = st.date_input("Gimimo data", value=gim_data_v, min_value=date(1950,1,1), key="gim_data")
             tautybes_opts = [f"{name} ({code})" for name, code in TAUTYBES]
-            tautybe = st.selectbox("Tautybė", tautybes_opts)
-            pr_vilk = st.selectbox("Priskirti vilkiką", [""] + vilkikai_list)
-            kaip_mokinys = st.selectbox("Kaip mokinys", [""] + vilkikai_list)
+            tautybe = st.selectbox("Tautybė", tautybes_opts, index=tautybes_opts.index(tautybe_v) if tautybe_v in tautybes_opts else 0, key="tautybe")
+            pr_vilk = st.selectbox("Priskirti vilkiką", [""] + vilkikai_list, index=(vilkikai_list.index(pr_vilk_v)+1 if pr_vilk_v in vilkikai_list else 0), key="pr_vilk")
+            kaip_mokinys = st.selectbox("Kaip mokinys", [""] + vilkikai_list, index=(vilkikai_list.index(kaip_mokinys_v)+1 if kaip_mokinys_v in vilkikai_list else 0), key="kaip_mokinys")
             kadencijos_pabaiga, atostogu_pabaiga = None, None
             if pr_vilk:
-                kadencijos_pabaiga = st.date_input("Kadencijos pabaigos planas", value=date.today(), key="kad_pab")
+                kadencijos_pabaiga = st.date_input("Kadencijos pabaigos planas", value=kad_pab_v, key="kad_pab")
             else:
-                atostogu_pabaiga = st.date_input("Atostogų pabaigos planas", value=date.today(), key="atost_pab")
+                atostogu_pabaiga = st.date_input("Atostogų pabaigos planas", value=atost_pab_v, key="atost_pab")
             col1, col2 = st.columns(2)
             save = col1.form_submit_button("💾 Išsaugoti vairuotoją")
             back = col2.form_submit_button("🔙 Grįžti į sąrašą", on_click=clear_sel)
+
         if save:
+            # atnaujiname session_state su paskutinėmis reikšmėmis
+            st.session_state["vardas"] = vardas
+            st.session_state["pavarde"] = pavarde
+            st.session_state["gim_data"] = gim_data
+            st.session_state["tautybe"] = tautybe
+            st.session_state["pr_vilk"] = pr_vilk
+            st.session_state["kaip_mokinys"] = kaip_mokinys
+            if pr_vilk:
+                st.session_state["kad_pab"] = kadencijos_pabaiga
+            else:
+                st.session_state["atost_pab"] = atostogu_pabaiga
+
             error = False
             if pr_vilk:
                 if vilkikas_jau_priskirtas(pr_vilk, kaip_laukas='priskirtas_vilkikas'):
@@ -196,6 +216,10 @@ def show(conn, c):
                     )
                     conn.commit()
                     st.success("✅ Vairuotojas įrašytas.")
+                    # Išvalom formą
+                    for key in ["vardas", "pavarde", "gim_data", "tautybe", "pr_vilk", "kaip_mokinys", "kad_pab", "atost_pab"]:
+                        if key in st.session_state:
+                            del st.session_state[key]
                     clear_sel()
                 except Exception as e:
                     st.error(f"❌ Klaida: {e}")
@@ -243,15 +267,12 @@ def show(conn, c):
         val = st.session_state.get(f"f_{col}", "")
         if val:
             df_filt = df_filt[df_filt[col].astype(str).str.contains(val, case=False, na=False)]
-    # Header row
     hdr = st.columns(len(df_filt.columns)+1)
     for i, col in enumerate(df_filt.columns): hdr[i].markdown(f"**{col}**")
     hdr[-1].markdown("**Veiksmai**")
-    # Data rows
     for _, row in df_filt.iterrows():
         row_cols = st.columns(len(df_filt.columns)+1)
         for i, col in enumerate(df_filt.columns): row_cols[i].write(row[col])
         row_cols[-1].button("✏️", key=f"edit_{row['id']}", on_click=edit, args=(row['id'],))
-    # CSV export
     csv = df.to_csv(index=False, sep=';').encode('utf-8')
     st.download_button(label="💾 Eksportuoti kaip CSV", data=csv, file_name="vairuotojai.csv", mime="text/csv")

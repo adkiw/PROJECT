@@ -26,6 +26,16 @@ def show(conn, c):
     markiu_list      = [r[0] for r in c.execute("SELECT reiksme FROM lookup WHERE kategorija = 'Markė'").fetchall()]
     vairuotoju_list = [f"{r[1]} {r[2]}" for r in c.execute("SELECT id, vardas, pavarde FROM vairuotojai").fetchall()]
 
+    # Transporto vadybininko dropdown iš darbuotojai
+    vadybininku_list = [
+        f"{r[0]} {r[1]}"
+        for r in c.execute(
+            "SELECT vardas, pavarde FROM darbuotojai WHERE pareigybe = ?", 
+            ("Transporto vadybininkas",)
+        ).fetchall()
+    ]
+    vadybininku_dropdown = [""] + vadybininku_list  # pirmas - tuščias
+
     # Callbacks
     def clear_selection():
         st.session_state.selected_vilk = None
@@ -144,9 +154,19 @@ def show(conn, c):
                          if not is_new and vilk['draudimas'] else None)
         draud_date = col1.date_input("Draudimo galiojimo pabaiga", value=draud_initial, key="draud_date")
 
-        vadyb = col2.text_input("Transporto vadybininkas", value=("" if is_new else vilk['vadybininkas']))
+        # Transporto vadybininkas su dropdown
+        if not is_new and vilk.get('vadybininkas', "") in vadybininku_list:
+            vadyb_idx = vadybininku_dropdown.index(vilk['vadybininkas'])
+        else:
+            vadyb_idx = 0
+        vadyb = col2.selectbox(
+            "Transporto vadybininkas",
+            vadybininku_dropdown,
+            index=vadyb_idx
+        )
+
         v1_opts = [""] + vairuotoju_list
-        v1_idx, v2_idx = 0,0
+        v1_idx, v2_idx = 0, 0
         if not is_new and vilk['vairuotojai']:
             parts = vilk['vairuotojai'].split(', ')
             if parts and parts[0] in vairuotoju_list: v1_idx = v1_opts.index(parts[0])

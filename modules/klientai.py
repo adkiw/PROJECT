@@ -51,7 +51,7 @@ def show(conn, c):
     if st.session_state.selected_client is None:
         # Load data
         df = pd.read_sql(
-            "SELECT id, pavadinimas, salis, regionas, miestas, musu_limitas AS limito_likutis FROM klientai",
+            "SELECT id, pavadinimas, salis, regionas, miestas, likes_limitas AS limito_likutis FROM klientai",
             conn
         )
         # Filters above headers
@@ -91,6 +91,7 @@ def show(conn, c):
             return
         cli = df_cli.iloc[0]
 
+    # 6. Fields: pervadinta "Likes limitas" į "Limito likutis"
     fields = [
         ("Įmonės pavadinimas",        "pavadinimas"),
         ("PVM/VAT numeris",           "vat_numeris"),
@@ -106,7 +107,7 @@ def show(conn, c):
         ("Sąskaitų tel. nr",         "saskaitos_tel"),
         ("COFACE limitas",            "coface_limitas"),
         ("Mūsų limitas",              "musu_limitas"),
-        ("Likes limitas",             "likes_limitas"),
+        ("Limito likutis",            "likes_limitas"),   # <- pervadinta čia
     ]
     limit_keys = {"coface_limitas","musu_limitas","likes_limitas"}
 

@@ -14,7 +14,8 @@ def show(conn, c):
         'tautybe': 'TEXT',
         'priskirtas_vilkikas': 'TEXT',
         'kadencijos_pabaiga': 'TEXT',
-        'atostogu_pabaiga': 'TEXT'
+        'atostogu_pabaiga': 'TEXT',
+        'kaip_mokinys': 'TEXT'  # NAUJAS LAUKAS
     }
     for col, typ in extras.items():
         if col not in existing:
@@ -40,6 +41,17 @@ def show(conn, c):
 
     sel = st.session_state.selected_vair
 
+    # Padeda tikrinti ar vilkikas jau priskirtas kitam
+    def vilkikas_jau_priskirtas(vilkikas, exclude_id=None, kaip_laukas='priskirtas_vilkikas'):
+        if not vilkikas:
+            return False
+        query = f"SELECT id FROM vairuotojai WHERE {kaip_laukas} = ?"
+        params = (vilkikas,)
+        if exclude_id is not None:
+            query += " AND id != ?"
+            params += (exclude_id,)
+        return c.execute(query, params).fetchone() is not None
+
     # Edit existing
     if sel not in (None, 0):
         df_sel = pd.read_sql_query("SELECT * FROM vairuotojai WHERE id = ?", conn, params=(sel,))
@@ -60,6 +72,10 @@ def show(conn, c):
                 "Priskirti vilkiką", [""] + vilkikai_list,
                 index=(vilkikai_list.index(row['priskirtas_vilkikas'])+1 if row['priskirtas_vilkikas'] in vilkikai_list else 0)
             )
+            kaip_mokinys = st.selectbox(
+                "Kaip mokinys", [""] + vilkikai_list,
+                index=(vilkikai_list.index(row['kaip_mokinys'])+1 if row['kaip_mokinys'] in vilkikai_list else 0)
+            )
             kadencijos_pabaiga, atostogu_pabaiga = None, None
             if pr_vilk:
                 kadencijos_pabaiga = st.date_input(
@@ -77,23 +93,44 @@ def show(conn, c):
             save = col1.form_submit_button("💾 Išsaugoti")
             back = col2.form_submit_button("🔙 Grįžti į sąrašą", on_click=clear_sel)
         if save:
-            try:
-                c.execute(
-                    "UPDATE vairuotojai SET vardas=?, pavarde=?, gimimo_metai=?, tautybe=?, priskirtas_vilkikas=?, kadencijos_pabaiga=?, atostogu_pabaiga=? WHERE id=?",
-                    (
-                        vardas, pavarde,
-                        gim_data.isoformat() if gim_data else None,
-                        tautybe, pr_vilk,
-                        kadencijos_pabaiga.isoformat() if kadencijos_pabaiga else None,
-                        atostogu_pabaiga.isoformat() if atostogu_pabaiga else None,
-                        sel
+            error = False
+            # Priskirtas vilkikas negali būti kitam priskirtas arba kaip mokinys kitam
+            if pr_vilk:
+                if vilkikas_jau_priskirtas(pr_vilk, exclude_id=sel, kaip_laukas='priskirtas_vilkikas'):
+                    st.error("❌ Šis vilkikas jau priskirtas kitam vairuotojui!")
+                    error = True
+                if vilkikas_jau_priskirtas(pr_vilk, exclude_id=sel, kaip_laukas='kaip_mokinys'):
+                    st.error("❌ Šis vilkikas jau yra pasirinktas kitam vairuotojui kaip mokinio vilkikas!")
+                    error = True
+            # Kaip mokinys negali būti kitam priskirtas arba kaip mokinys kitam
+            if kaip_mokinys:
+                if vilkikas_jau_priskirtas(kaip_mokinys, exclude_id=sel, kaip_laukas='priskirtas_vilkikas'):
+                    st.error("❌ Šis vilkikas jau priskirtas kitam vairuotojui!")
+                    error = True
+                if vilkikas_jau_priskirtas(kaip_mokinys, exclude_id=sel, kaip_laukas='kaip_mokinys'):
+                    st.error("❌ Šis vilkikas jau yra pasirinktas kitam vairuotojui kaip mokinio vilkikas!")
+                    error = True
+            if pr_vilk and kaip_mokinys and pr_vilk == kaip_mokinys:
+                st.error("❌ Negalima pasirinkti to paties vilkiko abiem laukams!")
+                error = True
+            if not error:
+                try:
+                    c.execute(
+                        "UPDATE vairuotojai SET vardas=?, pavarde=?, gimimo_metai=?, tautybe=?, priskirtas_vilkikas=?, kaip_mokinys=?, kadencijos_pabaiga=?, atostogu_pabaiga=? WHERE id=?",
+                        (
+                            vardas, pavarde,
+                            gim_data.isoformat() if gim_data else None,
+                            tautybe, pr_vilk, kaip_mokinys,
+                            kadencijos_pabaiga.isoformat() if kadencijos_pabaiga else None,
+                            atostogu_pabaiga.isoformat() if atostogu_pabaiga else None,
+                            sel
+                        )
                     )
-                )
-                conn.commit()
-                st.success("✅ Pakeitimai išsaugoti.")
-                clear_sel()
-            except Exception as e:
-                st.error(f"❌ Klaida: {e}")
+                    conn.commit()
+                    st.success("✅ Pakeitimai išsaugoti.")
+                    clear_sel()
+                except Exception as e:
+                    st.error(f"❌ Klaida: {e}")
         return
 
     # New form
@@ -104,6 +141,7 @@ def show(conn, c):
             gim_data = st.date_input("Gimimo data", value=None)
             tautybe = st.text_input("Tautybė")
             pr_vilk = st.selectbox("Priskirti vilkiką", [""] + vilkikai_list)
+            kaip_mokinys = st.selectbox("Kaip mokinys", [""] + vilkikai_list)
             kadencijos_pabaiga, atostogu_pabaiga = None, None
             if pr_vilk:
                 kadencijos_pabaiga = st.date_input("Kadencijos pabaigos planas", value=date.today(), key="kad_pab")
@@ -113,16 +151,37 @@ def show(conn, c):
             save = col1.form_submit_button("💾 Išsaugoti vairuotoją")
             back = col2.form_submit_button("🔙 Grįžti į sąrašą", on_click=clear_sel)
         if save:
+            error = False
+            # Priskirtas vilkikas negali būti kitam priskirtas arba kaip mokinys kitam
+            if pr_vilk:
+                if vilkikas_jau_priskirtas(pr_vilk, kaip_laukas='priskirtas_vilkikas'):
+                    st.error("❌ Šis vilkikas jau priskirtas kitam vairuotojui!")
+                    error = True
+                if vilkikas_jau_priskirtas(pr_vilk, kaip_laukas='kaip_mokinys'):
+                    st.error("❌ Šis vilkikas jau yra pasirinktas kitam vairuotojui kaip mokinio vilkikas!")
+                    error = True
+            # Kaip mokinys negali būti kitam priskirtas arba kaip mokinys kitam
+            if kaip_mokinys:
+                if vilkikas_jau_priskirtas(kaip_mokinys, kaip_laukas='priskirtas_vilkikas'):
+                    st.error("❌ Šis vilkikas jau priskirtas kitam vairuotojui!")
+                    error = True
+                if vilkikas_jau_priskirtas(kaip_mokinys, kaip_laukas='kaip_mokinys'):
+                    st.error("❌ Šis vilkikas jau yra pasirinktas kitam vairuotojui kaip mokinio vilkikas!")
+                    error = True
+            if pr_vilk and kaip_mokinys and pr_vilk == kaip_mokinys:
+                st.error("❌ Negalima pasirinkti to paties vilkiko abiem laukams!")
+                error = True
             if not vardas or not pavarde:
                 st.warning("⚠️ Privalomi laukai: vardas ir pavardė.")
-            else:
+                error = True
+            if not error:
                 try:
                     c.execute(
-                        "INSERT INTO vairuotojai(vardas, pavarde, gimimo_metai, tautybe, priskirtas_vilkikas, kadencijos_pabaiga, atostogu_pabaiga) VALUES(?,?,?,?,?,?,?)",
+                        "INSERT INTO vairuotojai(vardas, pavarde, gimimo_metai, tautybe, priskirtas_vilkikas, kaip_mokinys, kadencijos_pabaiga, atostogu_pabaiga) VALUES(?,?,?,?,?,?,?,?)",
                         (
                             vardas, pavarde,
                             gim_data.isoformat() if gim_data else None,
-                            tautybe, pr_vilk,
+                            tautybe, pr_vilk, kaip_mokinys,
                             kadencijos_pabaiga.isoformat() if kadencijos_pabaiga else None,
                             atostogu_pabaiga.isoformat() if atostogu_pabaiga else None
                         )
@@ -146,7 +205,8 @@ def show(conn, c):
             'gimimo_metai': 'Gimimo data',
             'priskirtas_vilkikas': 'Priskirti vilkiką',
             'kadencijos_pabaiga': 'Kadencijos pabaiga',
-            'atostogu_pabaiga': 'Atostogų pabaiga'
+            'atostogu_pabaiga': 'Atostogų pabaiga',
+            'kaip_mokinys': 'Kaip mokinys'
         },
         inplace=True
     )

@@ -15,7 +15,7 @@ EU_COUNTRIES = [
 def show(conn, c):
     st.title("Užsakymų valdymas")
 
-    # Užtikrinam visus laukus
+    # Užtikrinam visus laukus (KROVINIAI)
     existing = [r[1] for r in c.execute("PRAGMA table_info(kroviniai)").fetchall()]
     extras = {
         "pakrovimo_numeris": "TEXT", "pakrovimo_laikas_nuo": "TEXT", "pakrovimo_laikas_iki": "TEXT",
@@ -29,6 +29,12 @@ def show(conn, c):
         if col not in existing:
             c.execute(f"ALTER TABLE kroviniai ADD COLUMN {col} {typ}")
     conn.commit()
+
+    # Užtikrinam, kad klientai turi likes_limitas
+    klientai_existing = [r[1] for r in c.execute("PRAGMA table_info(klientai)").fetchall()]
+    if "likes_limitas" not in klientai_existing:
+        c.execute("ALTER TABLE klientai ADD COLUMN likes_limitas REAL")
+        conn.commit()
 
     klientai = [r[0] for r in c.execute("SELECT pavadinimas FROM klientai").fetchall()]
     vilkikai = [r[0] for r in c.execute("SELECT numeris FROM vilkikai").fetchall()]
@@ -44,7 +50,7 @@ def show(conn, c):
     ]
     eksped_dropdown = [""] + eksped_vadybininkai
 
-    # Limito likutis
+    # Limito likutis (po užtikrinimo visada bus)
     df_klientai = pd.read_sql_query("SELECT pavadinimas, likes_limitas FROM klientai", conn)
     klientu_limitai = {row['pavadinimas']: row['likes_limitas'] for _, row in df_klientai.iterrows()}
 
@@ -94,7 +100,6 @@ def show(conn, c):
             saraso_stulpeliai = norimi + papildomi
             df_disp = df[saraso_stulpeliai]
 
-            # FILTRAI
             filter_cols = st.columns(len(df_disp.columns)+1)
             for i, col in enumerate(df_disp.columns):
                 filter_cols[i].text_input("", key=f"f_{col}")
@@ -106,7 +111,6 @@ def show(conn, c):
                 if v:
                     df_f = df_f[df_f[col].astype(str).str.contains(v, case=False, na=False)]
 
-            # HEADERIAI
             hdr = st.columns(len(df_disp.columns)+1)
             for i, col in enumerate(df_disp.columns):
                 hdr[i].markdown(f"**{header_labels.get(col, col)}**")
@@ -133,7 +137,6 @@ def show(conn, c):
     colA, colB, colC, colD = st.columns(4)
 
     with st.form("cargo_form", clear_on_submit=False):
-        # 1. UŽSAKOVAS
         opts_k = [""] + klientai
         idx_k = 0 if is_new else opts_k.index(data.get('klientas',''))
         klientas = colA.selectbox("Klientas", opts_k, index=idx_k, key="kl_klientas")
@@ -143,7 +146,6 @@ def show(conn, c):
         uzsak = colA.text_input("Užsakymo nr.", value=("" if is_new else data.get('uzsakymo_numeris','')), key="kl_uzsak")
         bus_idx = 0 if is_new or data.get('busena') not in busena_opt else busena_opt.index(data['busena'])
         bus = colA.selectbox("Būsena", busena_opt, index=bus_idx, key="cr_busena")
-
         eksped_val = ("" if is_new else data.get('ekspedicijos_vadybininkas', ""))
         eksped_idx = eksped_dropdown.index(eksped_val) if eksped_val in eksped_dropdown else 0
         eksped_vad = colA.selectbox("Ekspedicijos vadybininkas", eksped_dropdown, index=eksped_idx, key="eksped_vad")
@@ -155,7 +157,6 @@ def show(conn, c):
             for idx, v in enumerate(pk_salis_opts):
                 if pk_sal_val in v: pk_salis_index = idx; break
         pk_salis = colB.selectbox("Pakrovimo šalis", pk_salis_opts, index=pk_salis_index, key="pk_sal")
-
         pk_regionas = colB.text_input("Pakrovimo regionas", value=("" if is_new else data.get('pakrovimo_regionas','')), key="pk_regionas")
         pk_mie = colB.text_input("Pakrovimo miestas", value=("" if is_new else data.get('pakrovimo_miestas','')), key="pk_mie")
         pk_adr = colB.text_input("Pakrovimo adresas", value=("" if is_new else data.get('pakrovimo_adresas','')), key="pk_adr")
@@ -170,7 +171,6 @@ def show(conn, c):
             for idx, v in enumerate(is_salis_opts):
                 if is_sal_val in v: is_salis_index = idx; break
         is_salis = colC.selectbox("Iškrovimo šalis", is_salis_opts, index=is_salis_index, key="is_sal")
-
         is_regionas = colC.text_input("Iškrovimo regionas", value=("" if is_new else data.get('iskrovimo_regionas','')), key="is_regionas")
         is_mie = colC.text_input("Iškrovimo miestas", value=("" if is_new else data.get('iskrovimo_miestas','')), key="is_mie")
         is_adr = colC.text_input("Iškrovimo adresas", value=("" if is_new else data.get('iskrovimo_adresas','')), key="is_adr")
@@ -181,15 +181,12 @@ def show(conn, c):
         v_opts = [""] + vilkikai
         v_idx = 0 if is_new else v_opts.index(data.get('vilkikas',''))
         vilk = colD.selectbox("Vilkikas", v_opts, index=v_idx, key="cr_vilk")
-        # transporto vadybininkas - automatinis
         transp_vad = vilk_vad_map.get(vilk, "") if vilk else ""
-
         priekaba_value = ""
         if vilk:
             res = c.execute("SELECT priekaba FROM vilkikai WHERE numeris = ?", (vilk,)).fetchone()
             priekaba_value = res[0] if res and res[0] else ""
         colD.text_input("Priekaba", priekaba_value, disabled=True, key="cr_priek")
-
         km = colD.text_input("Km", value=("" if is_new else str(data.get('kilometrai',0))), key="cr_km")
         fr = colD.text_input("Frachtas (€)", value=("" if is_new else str(data.get('frachtas',0))), key="cr_fr")
         sv = colD.text_input("Svoris (kg)", value=("" if is_new else str(data.get('svoris',0))), key="cr_sv")
@@ -203,7 +200,6 @@ def show(conn, c):
         km_float = int(km or 0)
         limito_likutis = klientu_limitai.get(klientas, None)
 
-        # Užsakymo numerio įspėjimas
         num_count = c.execute(
             "SELECT COUNT(*) FROM kroviniai WHERE uzsakymo_numeris = ? AND (? IS NULL OR id != ?)",
             (uzsak, sel if not is_new else None, sel if not is_new else None)

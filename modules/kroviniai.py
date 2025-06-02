@@ -44,12 +44,12 @@ def show(conn, c):
         "pakrovimo_laikas_nuo": "TEXT",
         "pakrovimo_laikas_iki": "TEXT",
         "pakrovimo_salis": "TEXT",
-        "pakrovimo_regionas": "TEXT",         # naujas regiono laukas
+        "pakrovimo_regionas": "TEXT",
         "pakrovimo_miestas": "TEXT",
         "pakrovimo_adresas": "TEXT",
         "pakrovimo_data": "TEXT",
         "iskrovimo_salis": "TEXT",
-        "iskrovimo_regionas": "TEXT",         # naujas regiono laukas
+        "iskrovimo_regionas": "TEXT",
         "iskrovimo_miestas": "TEXT",
         "iskrovimo_adresas": "TEXT",
         "iskrovimo_data": "TEXT",
@@ -58,6 +58,7 @@ def show(conn, c):
         "vilkikas": "TEXT",
         "priekaba": "TEXT",
         "atsakingas_vadybininkas": "TEXT",
+        "ekspedicijos_vadybininkas": "TEXT",   # naujas
         "kilometrai": "INTEGER",
         "frachtas": "REAL",
         "svoris": "INTEGER",
@@ -75,6 +76,20 @@ def show(conn, c):
     busena_opt = [r[0] for r in c.execute("SELECT reiksme FROM lookup WHERE kategorija = ?", ("busena",)).fetchall()]
     if not busena_opt:
         busena_opt = ["suplanuotas","nesuplanuotas","pakrautas","iškrautas"]
+
+    # Ekspedicijos vadybininkai (iš darbuotojai)
+    eksped_vadybininkai = [
+        f"{r[0]} {r[1]}"
+        for r in c.execute(
+            "SELECT vardas, pavarde FROM darbuotojai WHERE pareigybe = ?", 
+            ("Ekspedicijos vadybininkas",)
+        ).fetchall()
+    ]
+    eksped_dropdown = [""] + eksped_vadybininkai
+
+    # Klientų limitai
+    df_klientai = pd.read_sql_query("SELECT pavadinimas, musu_limitas FROM klientai", conn)
+    klientu_limitai = {row['pavadinimas']: row['musu_limitas'] for _, row in df_klientai.iterrows()}
 
     # Session state
     if 'selected_cargo' not in st.session_state:
@@ -100,20 +115,26 @@ def show(conn, c):
         if df.empty:
             st.info("Kol kas nėra krovinių.")
         else:
-            # Lentelėje rodome regiono laukus
             hidden = [
                 "pakrovimo_numeris", "pakrovimo_laikas_nuo", "pakrovimo_laikas_iki",
                 "iskrovimo_laikas_nuo", "iskrovimo_laikas_iki",
                 "pakrovimo_adresas", "iskrovimo_adresas",
                 "svoris", "paleciu_skaicius"
             ]
-            # Rodome regionus
-            show_cols = [col for col in df.columns if col not in hidden] + ["pakrovimo_regionas", "iskrovimo_regionas"]
+            # Rodyti regionus, ekspedicijos vadybininką, kilometro įkainį
+            show_cols = [col for col in df.columns if col not in hidden] \
+                + ["pakrovimo_regionas", "iskrovimo_regionas", "ekspedicijos_vadybininkas"]
             show_cols = list(dict.fromkeys(show_cols)) # šalinam dublius
             df_disp = df.copy()
             if "pakrovimo_regionas" not in df_disp.columns: df_disp["pakrovimo_regionas"] = ""
             if "iskrovimo_regionas" not in df_disp.columns: df_disp["iskrovimo_regionas"] = ""
+            if "ekspedicijos_vadybininkas" not in df_disp.columns: df_disp["ekspedicijos_vadybininkas"] = ""
             df_disp = df_disp[show_cols]
+
+            # Pridedam kilometro įkainį
+            df_disp["Kilometro įkainis"] = df_disp.apply(
+                lambda r: round(r["frachtas"] / r["kilometrai"], 2) if r.get("kilometrai",0) else "", axis=1
+            )
 
             # filters
             cols = st.columns(len(df_disp.columns)+1)
@@ -154,9 +175,18 @@ def show(conn, c):
         opts_k = [""] + klientai
         idx_k = 0 if is_new else opts_k.index(data.get('klientas',''))
         klientas = colA.selectbox("Klientas", opts_k, index=idx_k, key="kl_klientas")
+        # Automatinis limito likutis
+        limito_likutis = klientu_limitai.get(klientas, "")
+        if klientas:
+            colA.info(f"Limito likutis: {limito_likutis}")
         uzsak = colA.text_input("Užsakymo nr.", value=("" if is_new else data.get('uzsakymo_numeris','')), key="kl_uzsak")
         bus_idx = 0 if is_new or data.get('busena') not in busena_opt else busena_opt.index(data['busena'])
         bus = colA.selectbox("Būsena", busena_opt, index=bus_idx, key="cr_busena")
+
+        # Ekspedicijos vadybininkas
+        eksped_val = ("" if is_new else data.get('ekspedicijos_vadybininkas', ""))
+        eksped_idx = eksped_dropdown.index(eksped_val) if eksped_val in eksped_dropdown else 0
+        eksped_vad = colA.selectbox("Ekspedicijos vadybininkas", eksped_dropdown, index=eksped_idx, key="eksped_vad")
 
         # 2. PAKROVIMAS (tvarka: salis, regionas, miestas, adresas, data, laikas nuo, laikas iki)
         pk_salis_opts = [f"{name} ({code})" for name, code in EU_COUNTRIES]
@@ -174,7 +204,7 @@ def show(conn, c):
         pk_nuo = colB.time_input("Pakrovimo laikas nuo", value=(time(8,0) if is_new else pd.to_datetime(data['pakrovimo_laikas_nuo']).time()), key="pk_nuo")
         pk_iki = colB.time_input("Pakrovimo laikas iki", value=(time(17,0) if is_new else pd.to_datetime(data['pakrovimo_laikas_iki']).time()), key="pk_iki")
 
-        # 3. IŠKROVIMAS (tvarka: salis, regionas, miestas, adresas, data, laikas nuo, laikas iki)
+        # 3. IŠKROVIMAS
         is_salis_opts = [f"{name} ({code})" for name, code in EU_COUNTRIES]
         is_sal_val = "" if is_new else data.get('iskrovimo_salis', '')
         is_salis_index = 0
@@ -195,7 +225,6 @@ def show(conn, c):
         v_idx = 0 if is_new else v_opts.index(data.get('vilkikas',''))
         vilk = colD.selectbox("Vilkikas", v_opts, index=v_idx, key="cr_vilk")
 
-        # Priekaba pagal vilkiką
         priekaba_value = ""
         if vilk:
             res = c.execute("SELECT priekaba FROM vilkikai WHERE numeris = ?", (vilk,)).fetchone()
@@ -212,10 +241,15 @@ def show(conn, c):
 
     if save:
         # validations
+        frachtas_float = float(fr.replace(",", ".") or 0)
+        km_float = int(km or 0)
+        limito_likutis = klientu_limitai.get(klientas, None)
         if pk_data > isk_data:
             st.error("Pakrovimo data negali būti vėlesnė už iškrovimo.")
         elif not klientas or not uzsak:
             st.error("Privalomi laukai: Klientas ir Užsakymo nr.")
+        elif limito_likutis is not None and frachtas_float > limito_likutis:
+            st.error(f"Kliento limito likutis ({limito_likutis}) yra mažesnis nei frachtas ({frachtas_float}). Negalima išsaugoti.")
         else:
             vals = {
                 'klientas': klientas,
@@ -237,8 +271,9 @@ def show(conn, c):
                 'vilkikas': vilk,
                 'priekaba': priekaba_value,
                 'atsakingas_vadybininkas': f"vadyb_{vilk.lower()}" if vilk else None,
-                'kilometrai': int(km or 0),
-                'frachtas': float(fr or 0),
+                'ekspedicijos_vadybininkas': eksped_vad,
+                'kilometrai': km_float,
+                'frachtas': frachtas_float,
                 'svoris': int(sv or 0),
                 'paleciu_skaicius': int(pal or 0),
                 'busena': bus

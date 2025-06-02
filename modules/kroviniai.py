@@ -2,7 +2,37 @@ import streamlit as st
 import pandas as pd
 from datetime import date, time, timedelta
 
-# modules/kroviniai.py
+# Europos šalys su prefiksais
+EU_COUNTRIES = [
+    ("", ""),
+    ("Lietuva", "LT"),
+    ("Latvija", "LV"),
+    ("Estija", "EE"),
+    ("Lenkija", "PL"),
+    ("Vokietija", "DE"),
+    ("Prancūzija", "FR"),
+    ("Ispanija", "ES"),
+    ("Italija", "IT"),
+    ("Olandija", "NL"),
+    ("Belgija", "BE"),
+    ("Austrija", "AT"),
+    ("Švedija", "SE"),
+    ("Suomija", "FI"),
+    ("Čekija", "CZ"),
+    ("Slovakija", "SK"),
+    ("Vengrija", "HU"),
+    ("Rumunija", "RO"),
+    ("Bulgarija", "BG"),
+    ("Danija", "DK"),
+    ("Norvegija", "NO"),
+    ("Šveicarija", "CH"),
+    ("Kroatija", "HR"),
+    ("Slovėnija", "SI"),
+    ("Portugalija", "PT"),
+    ("Graikija", "GR"),
+    ("Airija", "IE"),
+    ("Didžioji Britanija", "GB"),
+]
 
 def show(conn, c):
     st.title("Užsakymų valdymas")
@@ -17,16 +47,16 @@ def show(conn, c):
         "iskrovimo_laikas_iki": "TEXT",
         "pakrovimo_salis": "TEXT",
         "pakrovimo_miestas": "TEXT",
+        "pakrovimo_adresas": "TEXT",
         "iskrovimo_salis": "TEXT",
         "iskrovimo_miestas": "TEXT",
+        "iskrovimo_adresas": "TEXT",
         "vilkikas": "TEXT",
         "priekaba": "TEXT",
         "atsakingas_vadybininkas": "TEXT",
         "svoris": "INTEGER",
         "paleciu_skaicius": "INTEGER",
-        "busena": "TEXT",
-        "pakrovimo_adresas": "TEXT",      # <-- naujas stulpelis
-        "iskrovimo_adresas": "TEXT"       # <-- naujas stulpelis
+        "busena": "TEXT"
     }
     for col, typ in extras.items():
         if col not in existing:
@@ -45,7 +75,6 @@ def show(conn, c):
         st.session_state['selected_cargo'] = None
     def clear_sel():
         st.session_state['selected_cargo'] = None
-        # clear filters
         for k in list(st.session_state):
             if k.startswith("f_"):
                 st.session_state[k] = ""
@@ -65,10 +94,12 @@ def show(conn, c):
         if df.empty:
             st.info("Kol kas nėra krovinių.")
         else:
-            # slėpti adresų stulpelius sąraše!
-            hidden = ["pakrovimo_numeris","pakrovimo_laikas_nuo","pakrovimo_laikas_iki",
-                      "iskrovimo_laikas_nuo","iskrovimo_laikas_iki","svoris","paleciu_skaicius",
-                      "pakrovimo_adresas","iskrovimo_adresas"]
+            hidden = [
+                "pakrovimo_numeris", "pakrovimo_laikas_nuo", "pakrovimo_laikas_iki",
+                "iskrovimo_laikas_nuo", "iskrovimo_laikas_iki",
+                "pakrovimo_adresas", "iskrovimo_adresas",
+                "svoris", "paleciu_skaicius"
+            ]
             df_disp = df.drop(columns=hidden, errors='ignore')
             # filters
             cols = st.columns(len(df_disp.columns)+1)
@@ -101,46 +132,57 @@ def show(conn, c):
         clear_sel()
         return
 
+    # ---- 4 STULPELIŲ FORMA ----
+    st.markdown("### Krovinių įvedimas")
+    colA, colB, colC, colD = st.columns(4)
+
     with st.form("cargo_form", clear_on_submit=False):
-        col1, col2 = st.columns(2)
-        # klientas
+        # 1. UŽSAKOVAS
         opts_k = [""] + klientai
         idx_k = 0 if is_new else opts_k.index(data.get('klientas',''))
-        klientas = col1.selectbox("Klientas", opts_k, index=idx_k, key="kl_klientas")
-        uzsak = col2.text_input("Užsakymo nr.", value=("" if is_new else data.get('uzsakymo_numeris','')), key="kl_uzsak")
-        # pakrovimo laikas
-        col3, col4 = st.columns(2)
-        pk_data = col3.date_input("Pakrovimo data", value=(date.today() if is_new else pd.to_datetime(data['pakrovimo_data']).date()), key="pk_data")
-        pk_nuo = col3.time_input("Nuo", value=(time(8,0) if is_new else pd.to_datetime(data['pakrovimo_laikas_nuo']).time()), key="pk_nuo")
-        pk_iki = col3.time_input("Iki", value=(time(17,0) if is_new else pd.to_datetime(data['pakrovimo_laikas_iki']).time()), key="pk_iki")
-        # iskrovimo laikas
-        isk_data = col4.date_input("Iškrovimo data", value=(pk_data + timedelta(days=1) if is_new else pd.to_datetime(data['iskrovimo_data']).date()), key="isk_data")
-        is_nuo = col4.time_input("Nuo", value=(time(8,0) if is_new else pd.to_datetime(data['iskrovimo_laikas_nuo']).time()), key="is_nuo")
-        is_iki = col4.time_input("Iki", value=(time(17,0) if is_new else pd.to_datetime(data['iskrovimo_laikas_iki']).time()), key="is_iki")
-        # vietos
-        pk_sal = col1.text_input("Pak. šalis", value=("" if is_new else data.get('pakrovimo_salis','')), key="pk_sal")
-        pk_mie = col1.text_input("Pak. miestas", value=("" if is_new else data.get('pakrovimo_miestas','')), key="pk_mie")
-        is_sal = col2.text_input("Išk. šalis", value=("" if is_new else data.get('iskrovimo_salis','')), key="is_sal")
-        is_mie = col2.text_input("Išk. miestas", value=("" if is_new else data.get('iskrovimo_miestas','')), key="is_mie")
-        
-        # ----------- PRIDĖTI ADRESO LAUKUS -------------
-        pk_adr = col1.text_input("Pakrovimo vietos adresas", value=("" if is_new else data.get('pakrovimo_adresas','')), key="pk_adr")
-        is_adr = col2.text_input("Iškrovimo vietos adresas", value=("" if is_new else data.get('iskrovimo_adresas','')), key="is_adr")
-        # -----------------------------------------------
+        klientas = colA.selectbox("Klientas", opts_k, index=idx_k, key="kl_klientas")
+        uzsak = colA.text_input("Užsakymo nr.", value=("" if is_new else data.get('uzsakymo_numeris','')), key="kl_uzsak")
+        bus_idx = 0 if is_new or data.get('busena') not in busena_opt else busena_opt.index(data['busena'])
+        bus = colA.selectbox("Būsena", busena_opt, index=bus_idx, key="cr_busena")
 
-        # vilkikas/priekaba
+        # 2. PAKROVIMAS
+        pk_salis_opts = [f"{name} ({code})" for name, code in EU_COUNTRIES]
+        pk_sal_val = "" if is_new else data.get('pakrovimo_salis', '')
+        pk_salis_index = 0
+        if pk_sal_val:
+            for idx, v in enumerate(pk_salis_opts):
+                if pk_sal_val in v: pk_salis_index = idx; break
+        pk_salis = colB.selectbox("Pakrovimo šalis", pk_salis_opts, index=pk_salis_index, key="pk_sal")
+        pk_mie = colB.text_input("Pakrovimo miestas", value=("" if is_new else data.get('pakrovimo_miestas','')), key="pk_mie")
+        pk_adr = colB.text_input("Pakrovimo adresas", value=("" if is_new else data.get('pakrovimo_adresas','')), key="pk_adr")
+        pk_data = colB.date_input("Pakrovimo data", value=(date.today() if is_new else pd.to_datetime(data['pakrovimo_data']).date()), key="pk_data")
+        pk_nuo = colB.time_input("Pakrovimo laikas nuo", value=(time(8,0) if is_new else pd.to_datetime(data['pakrovimo_laikas_nuo']).time()), key="pk_nuo")
+        pk_iki = colB.time_input("Pakrovimo laikas iki", value=(time(17,0) if is_new else pd.to_datetime(data['pakrovimo_laikas_iki']).time()), key="pk_iki")
+
+        # 3. IŠKROVIMAS
+        is_salis_opts = [f"{name} ({code})" for name, code in EU_COUNTRIES]
+        is_sal_val = "" if is_new else data.get('iskrovimo_salis', '')
+        is_salis_index = 0
+        if is_sal_val:
+            for idx, v in enumerate(is_salis_opts):
+                if is_sal_val in v: is_salis_index = idx; break
+        is_salis = colC.selectbox("Iškrovimo šalis", is_salis_opts, index=is_salis_index, key="is_sal")
+        is_mie = colC.text_input("Iškrovimo miestas", value=("" if is_new else data.get('iskrovimo_miestas','')), key="is_mie")
+        is_adr = colC.text_input("Iškrovimo adresas", value=("" if is_new else data.get('iskrovimo_adresas','')), key="is_adr")
+        isk_data = colC.date_input("Iškrovimo data", value=(pk_data + timedelta(days=1) if is_new else pd.to_datetime(data['iskrovimo_data']).date()), key="isk_data")
+        is_nuo = colC.time_input("Iškrovimo laikas nuo", value=(time(8,0) if is_new else pd.to_datetime(data['iskrovimo_laikas_nuo']).time()), key="is_nuo")
+        is_iki = colC.time_input("Iškrovimo laikas iki", value=(time(17,0) if is_new else pd.to_datetime(data['iskrovimo_laikas_iki']).time()), key="is_iki")
+
+        # 4. PAPILDOMA
         v_opts = [""] + vilkikai
         v_idx = 0 if is_new else v_opts.index(data.get('vilkikas',''))
-        vilk = col3.selectbox("Vilkikas", v_opts, index=v_idx, key="cr_vilk")
+        vilk = colD.selectbox("Vilkikas", v_opts, index=v_idx, key="cr_vilk")
         priek = data.get('priekaba','') if not is_new else ""
-        col4.text_input("Priekaba", priek, disabled=True, key="cr_priek")
-        # papildoma
-        km = st.text_input("Km", value=("" if is_new else str(data.get('kilometrai',0))), key="cr_km")
-        fr = st.text_input("Frachtas (€)", value=("" if is_new else str(data.get('frachtas',0))), key="cr_fr")
-        sv = st.text_input("Svoris (kg)", value=("" if is_new else str(data.get('svoris',0))), key="cr_sv")
-        pal = st.text_input("Padėklų sk.", value=("" if is_new else str(data.get('paleciu_skaicius',0))), key="cr_pal")
-        bus_idx = 0 if is_new or data.get('busena') not in busena_opt else busena_opt.index(data['busena'])
-        bus = st.selectbox("Būsena", busena_opt, index=bus_idx, key="cr_busena")
+        colD.text_input("Priekaba", priek, disabled=True, key="cr_priek")
+        km = colD.text_input("Km", value=("" if is_new else str(data.get('kilometrai',0))), key="cr_km")
+        fr = colD.text_input("Frachtas (€)", value=("" if is_new else str(data.get('frachtas',0))), key="cr_fr")
+        sv = colD.text_input("Svoris (kg)", value=("" if is_new else str(data.get('svoris',0))), key="cr_sv")
+        pal = colD.text_input("Padėklų sk.", value=("" if is_new else str(data.get('paleciu_skaicius',0))), key="cr_pal")
 
         save = st.form_submit_button("💾 Išsaugoti")
         back = st.form_submit_button("🔙 Grįžti į sąrašą", on_click=clear_sel)
@@ -161,12 +203,12 @@ def show(conn, c):
                 'iskrovimo_data': isk_data.isoformat(),
                 'iskrovimo_laikas_nuo': is_nuo.isoformat(),
                 'iskrovimo_laikas_iki': is_iki.isoformat(),
-                'pakrovimo_salis': pk_sal,
+                'pakrovimo_salis': pk_salis.split("(")[-1][:-1] if "(" in pk_salis else pk_salis,   # išsaugom prefiksą
                 'pakrovimo_miestas': pk_mie,
-                'iskrovimo_salis': is_sal,
+                'pakrovimo_adresas': pk_adr,
+                'iskrovimo_salis': is_salis.split("(")[-1][:-1] if "(" in is_salis else is_salis,
                 'iskrovimo_miestas': is_mie,
-                'pakrovimo_adresas': pk_adr,   # <-- įrašom adresą
-                'iskrovimo_adresas': is_adr,   # <-- įrašom adresą
+                'iskrovimo_adresas': is_adr,
                 'vilkikas': vilk,
                 'priekaba': priek,
                 'atsakingas_vadybininkas': f"vadyb_{vilk.lower()}" if vilk else None,

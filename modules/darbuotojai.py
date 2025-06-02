@@ -1,8 +1,6 @@
 import streamlit as st
 import pandas as pd
 
-# modules/darbuotojai.py
-
 def show(conn, c):
     # Callbacks
     def clear_selection():
@@ -23,30 +21,22 @@ def show(conn, c):
 
     # 1. LIST VIEW with filters
     if st.session_state.selected_emp is None:
-        # Load data
         df = pd.read_sql(
             "SELECT id, vardas, pavarde, pareigybe, el_pastas, telefonas, grupe FROM darbuotojai",
             conn
         )
-        # Filters above headers
         filter_cols = st.columns(len(df.columns) + 1)
         for i, col in enumerate(df.columns):
             filter_cols[i].text_input(f"🔍 {col}", key=f"f_emp_{col}")
-        filter_cols[-1].write("")  # empty for actions
-
-        # Apply filters
+        filter_cols[-1].write("")
         for col in df.columns:
             val = st.session_state.get(f"f_emp_{col}", "")
             if val:
                 df = df[df[col].astype(str).str.contains(val, case=False, na=False)]
-
-        # Header row
         hdr = st.columns(len(df.columns) + 1)
         for i, col in enumerate(df.columns):
             hdr[i].markdown(f"**{col}**")
         hdr[-1].markdown("**Veiksmai**")
-
-        # Data rows
         for _, row in df.iterrows():
             row_cols = st.columns(len(df.columns) + 1)
             for i, col in enumerate(df.columns):
@@ -74,22 +64,55 @@ def show(conn, c):
             return
         cli = df_emp.iloc[0]
 
-    # Form fields: (label, key)
+    # Dropdown variantai
+    pareigybes = ["Ekspedicijos vadybininkas", "Transporto vadybininkas"]
+    grupes = {
+        "Ekspedicijos vadybininkas": ["EKSP1", "EKSP2", "EKSP3", "EKSP4", "EKSP5"],
+        "Transporto vadybininkas": ["TR1", "TR2", "TR3", "TR4", "TR5"]
+    }
+
+    # Form fields
     fields = [
-        ("Vardas",     "vardas"),
-        ("Pavardė",    "pavarde"),
-        ("Pareigybė",  "pareigybe"),
-        ("El. paštas",  "el_pastas"),
-        ("Telefonas",   "telefonas"),
-        ("Grupė",      "grupe"),
+        ("Vardas", "vardas"),
+        ("Pavardė", "pavarde"),
+        # Pareigybė su dropdown
+        ("Pareigybė", "pareigybe"),
+        ("El. paštas", "el_pastas"),
+        ("Telefonas", "telefonas"),
+        # Grupė su dropdown (dinaminis)
+        ("Grupė", "grupe"),
     ]
 
-    # Render inputs (3 per row)
-    for i in range(0, len(fields), 3):
-        cols = st.columns(3)
-        for j, (label, key) in enumerate(fields[i:i+3]):
-            default = "" if is_new else cli.get(key, "")
-            cols[j].text_input(label, key=key, value=str(default))
+    # -- Formos renderinimas su custom dropdownais --
+    cols1 = st.columns(3)
+    cols2 = st.columns(3)
+    # Vardas
+    cols1[0].text_input("Vardas", key="vardas", value=("" if is_new else cli.get("vardas", "")))
+    # Pavardė
+    cols1[1].text_input("Pavardė", key="pavarde", value=("" if is_new else cli.get("pavarde", "")))
+    # Pareigybė - selectbox
+    if is_new:
+        default_pareigybe = pareigybes[0]
+    else:
+        default_pareigybe = cli.get("pareigybe", pareigybes[0])
+    selected_pareigybe = cols1[2].selectbox(
+        "Pareigybė", pareigybes, key="pareigybe", index=pareigybes.index(default_pareigybe)
+    )
+    # El. paštas
+    cols2[0].text_input("El. paštas", key="el_pastas", value=("" if is_new else cli.get("el_pastas", "")))
+    # Telefonas
+    cols2[1].text_input("Telefonas", key="telefonas", value=("" if is_new else cli.get("telefonas", "")))
+    # Grupė - dinaminis selectbox
+    if is_new:
+        default_grupe = grupes[selected_pareigybe][0]
+    else:
+        default_grupe = cli.get("grupe", grupes[selected_pareigybe][0])
+    cols2[2].selectbox(
+        "Grupė",
+        grupes[st.session_state["pareigybe"]],
+        key="grupe",
+        index=grupes[st.session_state["pareigybe"]].index(default_grupe) if default_grupe in grupes[st.session_state["pareigybe"]] else 0
+    )
 
     # Save / Back buttons
     def do_save():

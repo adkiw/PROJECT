@@ -58,7 +58,7 @@ def show(conn, c):
         "vilkikas": "TEXT",
         "priekaba": "TEXT",
         "atsakingas_vadybininkas": "TEXT",
-        "ekspedicijos_vadybininkas": "TEXT",   # naujas
+        "ekspedicijos_vadybininkas": "TEXT",
         "kilometrai": "INTEGER",
         "frachtas": "REAL",
         "svoris": "INTEGER",
@@ -87,9 +87,9 @@ def show(conn, c):
     ]
     eksped_dropdown = [""] + eksped_vadybininkai
 
-    # Klientų limitai
-    df_klientai = pd.read_sql_query("SELECT pavadinimas, musu_limitas FROM klientai", conn)
-    klientu_limitai = {row['pavadinimas']: row['musu_limitas'] for _, row in df_klientai.iterrows()}
+    # Klientų likes_limitas (Limito likutis)
+    df_klientai = pd.read_sql_query("SELECT pavadinimas, likes_limitas FROM klientai", conn)
+    klientu_limitai = {row['pavadinimas']: row['likes_limitas'] for _, row in df_klientai.iterrows()}
 
     # Session state
     if 'selected_cargo' not in st.session_state:
@@ -121,7 +121,6 @@ def show(conn, c):
                 "pakrovimo_adresas", "iskrovimo_adresas",
                 "svoris", "paleciu_skaicius"
             ]
-            # Rodyti regionus, ekspedicijos vadybininką, kilometro įkainį
             show_cols = [col for col in df.columns if col not in hidden] \
                 + ["pakrovimo_regionas", "iskrovimo_regionas", "ekspedicijos_vadybininkas"]
             show_cols = list(dict.fromkeys(show_cols)) # šalinam dublius
@@ -175,7 +174,7 @@ def show(conn, c):
         opts_k = [""] + klientai
         idx_k = 0 if is_new else opts_k.index(data.get('klientas',''))
         klientas = colA.selectbox("Klientas", opts_k, index=idx_k, key="kl_klientas")
-        # Automatinis limito likutis
+        # Limito likutis (būtent likes_limitas)
         limito_likutis = klientu_limitai.get(klientas, "")
         if klientas:
             colA.info(f"Limito likutis: {limito_likutis}")

@@ -2,8 +2,6 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 
-# modules/vairuotojai.py
-
 def show(conn, c):
     st.title("DISPO – Vairuotojai")
 
@@ -12,19 +10,19 @@ def show(conn, c):
     extras = {
         'vardas': 'TEXT',
         'pavarde': 'TEXT',
-        'gimimo_metai': 'TEXT',  # ISO date for gimimo data
+        'gimimo_metai': 'TEXT',
         'tautybe': 'TEXT',
-        'priskirtas_vilkikas': 'TEXT'
+        'priskirtas_vilkikas': 'TEXT',
+        'kadencijos_pabaiga': 'TEXT',
+        'atostogu_pabaiga': 'TEXT'
     }
     for col, typ in extras.items():
         if col not in existing:
             c.execute(f"ALTER TABLE vairuotojai ADD COLUMN {col} {typ}")
     conn.commit()
 
-    # Dropdown data for edit/new
     vilkikai_list = [r[0] for r in c.execute("SELECT numeris FROM vilkikai").fetchall()]
 
-    # Session state for selection
     if 'selected_vair' not in st.session_state:
         st.session_state.selected_vair = None
 
@@ -36,12 +34,12 @@ def show(conn, c):
     def new(): st.session_state.selected_vair = 0
     def edit(id): st.session_state.selected_vair = id
 
-    # Title and add button
     col_title, col_add = st.columns([9,1])
     col_title.write("### ")
     col_add.button("➕ Pridėti vairuotoją", on_click=new)
 
     sel = st.session_state.selected_vair
+
     # Edit existing
     if sel not in (None, 0):
         df_sel = pd.read_sql_query("SELECT * FROM vairuotojai WHERE id = ?", conn, params=(sel,))
@@ -54,7 +52,7 @@ def show(conn, c):
             vardas = st.text_input("Vardas", row['vardas'])
             pavarde = st.text_input("Pavardė", row['pavarde'])
             gim_data = st.date_input(
-                "Gimimo data", 
+                "Gimimo data",
                 value=date.fromisoformat(row['gimimo_metai']) if row['gimimo_metai'] else None
             )
             tautybe = st.text_input("Tautybė", row['tautybe'])
@@ -62,17 +60,33 @@ def show(conn, c):
                 "Priskirti vilkiką", [""] + vilkikai_list,
                 index=(vilkikai_list.index(row['priskirtas_vilkikas'])+1 if row['priskirtas_vilkikas'] in vilkikai_list else 0)
             )
+            kadencijos_pabaiga, atostogu_pabaiga = None, None
+            if pr_vilk:
+                kadencijos_pabaiga = st.date_input(
+                    "Kadencijos pabaigos planas",
+                    value=(date.fromisoformat(row['kadencijos_pabaiga']) if row['kadencijos_pabaiga'] else date.today()),
+                    key="kad_pab"
+                )
+            else:
+                atostogu_pabaiga = st.date_input(
+                    "Atostogų pabaigos planas",
+                    value=(date.fromisoformat(row['atostogu_pabaiga']) if row['atostogu_pabaiga'] else date.today()),
+                    key="atost_pab"
+                )
             col1, col2 = st.columns(2)
             save = col1.form_submit_button("💾 Išsaugoti")
             back = col2.form_submit_button("🔙 Grįžti į sąrašą", on_click=clear_sel)
         if save:
             try:
                 c.execute(
-                    "UPDATE vairuotojai SET vardas=?, pavarde=?, gimimo_metai=?, tautybe=?, priskirtas_vilkikas=? WHERE id=?",
+                    "UPDATE vairuotojai SET vardas=?, pavarde=?, gimimo_metai=?, tautybe=?, priskirtas_vilkikas=?, kadencijos_pabaiga=?, atostogu_pabaiga=? WHERE id=?",
                     (
                         vardas, pavarde,
                         gim_data.isoformat() if gim_data else None,
-                        tautybe, pr_vilk, sel
+                        tautybe, pr_vilk,
+                        kadencijos_pabaiga.isoformat() if kadencijos_pabaiga else None,
+                        atostogu_pabaiga.isoformat() if atostogu_pabaiga else None,
+                        sel
                     )
                 )
                 conn.commit()
@@ -90,6 +104,11 @@ def show(conn, c):
             gim_data = st.date_input("Gimimo data", value=None)
             tautybe = st.text_input("Tautybė")
             pr_vilk = st.selectbox("Priskirti vilkiką", [""] + vilkikai_list)
+            kadencijos_pabaiga, atostogu_pabaiga = None, None
+            if pr_vilk:
+                kadencijos_pabaiga = st.date_input("Kadencijos pabaigos planas", value=date.today(), key="kad_pab")
+            else:
+                atostogu_pabaiga = st.date_input("Atostogų pabaigos planas", value=date.today(), key="atost_pab")
             col1, col2 = st.columns(2)
             save = col1.form_submit_button("💾 Išsaugoti vairuotoją")
             back = col2.form_submit_button("🔙 Grįžti į sąrašą", on_click=clear_sel)
@@ -99,11 +118,13 @@ def show(conn, c):
             else:
                 try:
                     c.execute(
-                        "INSERT INTO vairuotojai(vardas, pavarde, gimimo_metai, tautybe, priskirtas_vilkikas) VALUES(?,?,?,?,?)",
+                        "INSERT INTO vairuotojai(vardas, pavarde, gimimo_metai, tautybe, priskirtas_vilkikas, kadencijos_pabaiga, atostogu_pabaiga) VALUES(?,?,?,?,?,?,?)",
                         (
                             vardas, pavarde,
                             gim_data.isoformat() if gim_data else None,
-                            tautybe, pr_vilk
+                            tautybe, pr_vilk,
+                            kadencijos_pabaiga.isoformat() if kadencijos_pabaiga else None,
+                            atostogu_pabaiga.isoformat() if atostogu_pabaiga else None
                         )
                     )
                     conn.commit()
@@ -121,7 +142,12 @@ def show(conn, c):
         return
     df_disp = df.copy()
     df_disp.rename(
-        columns={'gimimo_metai': 'Gimimo data', 'priskirtas_vilkikas': 'Priskirti vilkiką'},
+        columns={
+            'gimimo_metai': 'Gimimo data',
+            'priskirtas_vilkikas': 'Priskirti vilkiką',
+            'kadencijos_pabaiga': 'Kadencijos pabaiga',
+            'atostogu_pabaiga': 'Atostogų pabaiga'
+        },
         inplace=True
     )
     # Filters

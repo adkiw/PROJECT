@@ -109,7 +109,7 @@ def show(conn, c):
             # SCROLL stilius
             st.markdown("""
             <style>
-            .st-emotion-cache-1avcm0n {min-width: 1850px;}
+            div[data-testid="stHorizontalBlock"] > div {min-width: 1850px;}
             </style>
             """, unsafe_allow_html=True)
 
@@ -124,17 +124,21 @@ def show(conn, c):
                 if v:
                     df_f = df_f[df_f[col].astype(str).str.contains(v, case=False, na=False)]
 
+            # Headeriai (max 2 eilutės)
             hdr = st.columns(len(df_disp.columns)+1)
             for i, col in enumerate(df_disp.columns):
                 label = HEADER_LABELS.get(col, col.replace("_", "<br>")[:14])
                 hdr[i].markdown(f"<b>{label}</b>", unsafe_allow_html=True)
             hdr[-1].markdown("<b>Veiksmai</b>", unsafe_allow_html=True)
 
+            # Lentelės eilutės su separatoriais
             for _, row in df_f.iterrows():
                 row_cols = st.columns(len(df_disp.columns)+1)
                 for i, col in enumerate(df_disp.columns):
                     row_cols[i].write(row[col])
                 row_cols[-1].button("✏️", key=f"edit_{row['id']}", on_click=edit_cargo, args=(row['id'],))
+                st.markdown("<hr style='margin:2px 0 2px 0; border:1px solid #eee;'>", unsafe_allow_html=True)
+
             st.download_button("💾 Eksportuoti kaip CSV", data=df_disp.to_csv(index=False, sep=';').encode('utf-8'),
                               file_name="kroviniai.csv", mime="text/csv")
         return

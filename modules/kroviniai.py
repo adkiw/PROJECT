@@ -24,7 +24,9 @@ def show(conn, c):
         "atsakingas_vadybininkas": "TEXT",
         "svoris": "INTEGER",
         "paleciu_skaicius": "INTEGER",
-        "busena": "TEXT"
+        "busena": "TEXT",
+        "pakrovimo_adresas": "TEXT",      # <-- naujas stulpelis
+        "iskrovimo_adresas": "TEXT"       # <-- naujas stulpelis
     }
     for col, typ in extras.items():
         if col not in existing:
@@ -63,8 +65,10 @@ def show(conn, c):
         if df.empty:
             st.info("Kol kas nėra krovinių.")
         else:
+            # slėpti adresų stulpelius sąraše!
             hidden = ["pakrovimo_numeris","pakrovimo_laikas_nuo","pakrovimo_laikas_iki",
-                      "iskrovimo_laikas_nuo","iskrovimo_laikas_iki","svoris","paleciu_skaicius"]
+                      "iskrovimo_laikas_nuo","iskrovimo_laikas_iki","svoris","paleciu_skaicius",
+                      "pakrovimo_adresas","iskrovimo_adresas"]
             df_disp = df.drop(columns=hidden, errors='ignore')
             # filters
             cols = st.columns(len(df_disp.columns)+1)
@@ -118,6 +122,12 @@ def show(conn, c):
         pk_mie = col1.text_input("Pak. miestas", value=("" if is_new else data.get('pakrovimo_miestas','')), key="pk_mie")
         is_sal = col2.text_input("Išk. šalis", value=("" if is_new else data.get('iskrovimo_salis','')), key="is_sal")
         is_mie = col2.text_input("Išk. miestas", value=("" if is_new else data.get('iskrovimo_miestas','')), key="is_mie")
+        
+        # ----------- PRIDĖTI ADRESO LAUKUS -------------
+        pk_adr = col1.text_input("Pakrovimo vietos adresas", value=("" if is_new else data.get('pakrovimo_adresas','')), key="pk_adr")
+        is_adr = col2.text_input("Iškrovimo vietos adresas", value=("" if is_new else data.get('iskrovimo_adresas','')), key="is_adr")
+        # -----------------------------------------------
+
         # vilkikas/priekaba
         v_opts = [""] + vilkikai
         v_idx = 0 if is_new else v_opts.index(data.get('vilkikas',''))
@@ -155,6 +165,8 @@ def show(conn, c):
                 'pakrovimo_miestas': pk_mie,
                 'iskrovimo_salis': is_sal,
                 'iskrovimo_miestas': is_mie,
+                'pakrovimo_adresas': pk_adr,   # <-- įrašom adresą
+                'iskrovimo_adresas': is_adr,   # <-- įrašom adresą
                 'vilkikas': vilk,
                 'priekaba': priek,
                 'atsakingas_vadybininkas': f"vadyb_{vilk.lower()}" if vilk else None,

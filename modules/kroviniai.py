@@ -12,6 +12,35 @@ EU_COUNTRIES = [
     ("Airija", "IE"), ("Didžioji Britanija", "GB"),
 ]
 
+def human_header(name):
+    # Automatiškai trumpina ir paverčia į max 2 eilučių headerį
+    parts = name.split('_')
+    if name.startswith("pakrovimo"):
+        prefix = "Pakr."
+        rest = parts[1:]
+    elif name.startswith("iskrovimo"):
+        prefix = "Iškr."
+        rest = parts[1:]
+    elif name.startswith("atsakingas"):
+        return "Atsak.<br>vadyb."
+    elif name == "kilometrai":
+        return "Km"
+    elif name == "frachtas":
+        return "Frachtas"
+    elif name == "svoris":
+        return "Svoris"
+    elif name == "paleciu_skaicius":
+        return "Padėklų<br>sk."
+    elif name == "uzsakymo_numeris":
+        return "Užsak.<br>nr."
+    else:
+        prefix = parts[0].capitalize()
+        rest = parts[1:]
+    if rest:
+        return prefix + "<br>" + " ".join(rest)
+    else:
+        return prefix
+
 def show(conn, c):
     st.title("Užsakymų valdymas")
 
@@ -90,8 +119,8 @@ def show(conn, c):
         "klientas": "Klientas",
         "vilkikas": "Vilkikas",
         "priekaba": "Priekaba",
-        "ekspedicijos_vadybininkas": "Ekspedicijos<br>vadybininkas",
-        "transporto_vadybininkas": "Transporto<br>vadybininkas"
+        "ekspedicijos_vadybininkas": "Ekspedicijos<br>vadyb.",
+        "transporto_vadybininkas": "Transporto<br>vadyb."
     }
 
     norimi = [
@@ -133,7 +162,10 @@ def show(conn, c):
 
                 hdr = st.columns(len(df_disp.columns)+1)
                 for i, col in enumerate(df_disp.columns):
-                    label = header_labels.get(col, col)
+                    if col in header_labels:
+                        label = header_labels[col]
+                    else:
+                        label = human_header(col)
                     hdr[i].markdown(f"<b>{label}</b>", unsafe_allow_html=True)
                 hdr[-1].markdown("<b>Veiksmai</b>", unsafe_allow_html=True)
 

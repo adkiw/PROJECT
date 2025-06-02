@@ -2,6 +2,17 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 
+TAUTYBES = [
+    ("", ""),
+    ("Lietuva", "LT"),
+    ("Baltarusija", "BY"),
+    ("Ukraina", "UA"),
+    ("Uzbekistanas", "UZ"),
+    ("Indija", "IN"),
+    ("Nigerija", "NG"),
+    ("Lenkija", "PL"),
+]
+
 def show(conn, c):
     st.title("DISPO – Vairuotojai")
 
@@ -15,7 +26,7 @@ def show(conn, c):
         'priskirtas_vilkikas': 'TEXT',
         'kadencijos_pabaiga': 'TEXT',
         'atostogu_pabaiga': 'TEXT',
-        'kaip_mokinys': 'TEXT'  # NAUJAS LAUKAS
+        'kaip_mokinys': 'TEXT'
     }
     for col, typ in extras.items():
         if col not in existing:
@@ -41,7 +52,7 @@ def show(conn, c):
 
     sel = st.session_state.selected_vair
 
-    # Padeda tikrinti ar vilkikas jau priskirtas kitam
+    # Pagalbinė funkcija: ar vilkikas jau priskirtas kaip pagrindinis arba kaip mokinys
     def vilkikas_jau_priskirtas(vilkikas, exclude_id=None, kaip_laukas='priskirtas_vilkikas'):
         if not vilkikas:
             return False
@@ -65,9 +76,15 @@ def show(conn, c):
             pavarde = st.text_input("Pavardė", row['pavarde'])
             gim_data = st.date_input(
                 "Gimimo data",
-                value=date.fromisoformat(row['gimimo_metai']) if row['gimimo_metai'] else None
+                value=date.fromisoformat(row['gimimo_metai']) if row['gimimo_metai'] else None,
+                min_value=date(1950, 1, 1)
             )
-            tautybe = st.text_input("Tautybė", row['tautybe'])
+            tautybes_opts = [f"{name} ({code})" for name, code in TAUTYBES]
+            tautybe_index = 0
+            if row['tautybe']:
+                for idx, v in enumerate(tautybes_opts):
+                    if row['tautybe'] in v: tautybe_index = idx; break
+            tautybe = st.selectbox("Tautybė", tautybes_opts, index=tautybe_index)
             pr_vilk = st.selectbox(
                 "Priskirti vilkiką", [""] + vilkikai_list,
                 index=(vilkikai_list.index(row['priskirtas_vilkikas'])+1 if row['priskirtas_vilkikas'] in vilkikai_list else 0)
@@ -94,22 +111,18 @@ def show(conn, c):
             back = col2.form_submit_button("🔙 Grįžti į sąrašą", on_click=clear_sel)
         if save:
             error = False
-            # Priskirtas vilkikas negali būti kitam priskirtas arba kaip mokinys kitam
+            # Tikrinimai:
+            # Pagrindinis vilkikas negali būti kitam pagrindiniam
             if pr_vilk:
                 if vilkikas_jau_priskirtas(pr_vilk, exclude_id=sel, kaip_laukas='priskirtas_vilkikas'):
-                    st.error("❌ Šis vilkikas jau priskirtas kitam vairuotojui!")
+                    st.error("❌ Šis vilkikas jau priskirtas kitam pagrindiniam vairuotojui!")
                     error = True
-                if vilkikas_jau_priskirtas(pr_vilk, exclude_id=sel, kaip_laukas='kaip_mokinys'):
-                    st.error("❌ Šis vilkikas jau yra pasirinktas kitam vairuotojui kaip mokinio vilkikas!")
-                    error = True
-            # Kaip mokinys negali būti kitam priskirtas arba kaip mokinys kitam
+            # Kaip mokinys negali būti kitam mokiniui
             if kaip_mokinys:
-                if vilkikas_jau_priskirtas(kaip_mokinys, exclude_id=sel, kaip_laukas='priskirtas_vilkikas'):
-                    st.error("❌ Šis vilkikas jau priskirtas kitam vairuotojui!")
-                    error = True
                 if vilkikas_jau_priskirtas(kaip_mokinys, exclude_id=sel, kaip_laukas='kaip_mokinys'):
-                    st.error("❌ Šis vilkikas jau yra pasirinktas kitam vairuotojui kaip mokinio vilkikas!")
+                    st.error("❌ Šis vilkikas jau pasirinktas kitam vairuotojui kaip mokinio vilkikas!")
                     error = True
+            # Negali abiejuose laukuose būti tas pats vilkikas
             if pr_vilk and kaip_mokinys and pr_vilk == kaip_mokinys:
                 st.error("❌ Negalima pasirinkti to paties vilkiko abiem laukams!")
                 error = True
@@ -120,7 +133,8 @@ def show(conn, c):
                         (
                             vardas, pavarde,
                             gim_data.isoformat() if gim_data else None,
-                            tautybe, pr_vilk, kaip_mokinys,
+                            tautybe.split("(")[-1][:-1] if "(" in tautybe else tautybe,
+                            pr_vilk, kaip_mokinys,
                             kadencijos_pabaiga.isoformat() if kadencijos_pabaiga else None,
                             atostogu_pabaiga.isoformat() if atostogu_pabaiga else None,
                             sel
@@ -138,8 +152,9 @@ def show(conn, c):
         with st.form("new_form", clear_on_submit=True):
             vardas = st.text_input("Vardas")
             pavarde = st.text_input("Pavardė")
-            gim_data = st.date_input("Gimimo data", value=None)
-            tautybe = st.text_input("Tautybė")
+            gim_data = st.date_input("Gimimo data", value=None, min_value=date(1950,1,1))
+            tautybes_opts = [f"{name} ({code})" for name, code in TAUTYBES]
+            tautybe = st.selectbox("Tautybė", tautybes_opts)
             pr_vilk = st.selectbox("Priskirti vilkiką", [""] + vilkikai_list)
             kaip_mokinys = st.selectbox("Kaip mokinys", [""] + vilkikai_list)
             kadencijos_pabaiga, atostogu_pabaiga = None, None
@@ -152,21 +167,13 @@ def show(conn, c):
             back = col2.form_submit_button("🔙 Grįžti į sąrašą", on_click=clear_sel)
         if save:
             error = False
-            # Priskirtas vilkikas negali būti kitam priskirtas arba kaip mokinys kitam
             if pr_vilk:
                 if vilkikas_jau_priskirtas(pr_vilk, kaip_laukas='priskirtas_vilkikas'):
-                    st.error("❌ Šis vilkikas jau priskirtas kitam vairuotojui!")
+                    st.error("❌ Šis vilkikas jau priskirtas kitam pagrindiniam vairuotojui!")
                     error = True
-                if vilkikas_jau_priskirtas(pr_vilk, kaip_laukas='kaip_mokinys'):
-                    st.error("❌ Šis vilkikas jau yra pasirinktas kitam vairuotojui kaip mokinio vilkikas!")
-                    error = True
-            # Kaip mokinys negali būti kitam priskirtas arba kaip mokinys kitam
             if kaip_mokinys:
-                if vilkikas_jau_priskirtas(kaip_mokinys, kaip_laukas='priskirtas_vilkikas'):
-                    st.error("❌ Šis vilkikas jau priskirtas kitam vairuotojui!")
-                    error = True
                 if vilkikas_jau_priskirtas(kaip_mokinys, kaip_laukas='kaip_mokinys'):
-                    st.error("❌ Šis vilkikas jau yra pasirinktas kitam vairuotojui kaip mokinio vilkikas!")
+                    st.error("❌ Šis vilkikas jau pasirinktas kitam vairuotojui kaip mokinio vilkikas!")
                     error = True
             if pr_vilk and kaip_mokinys and pr_vilk == kaip_mokinys:
                 st.error("❌ Negalima pasirinkti to paties vilkiko abiem laukams!")
@@ -181,7 +188,8 @@ def show(conn, c):
                         (
                             vardas, pavarde,
                             gim_data.isoformat() if gim_data else None,
-                            tautybe, pr_vilk, kaip_mokinys,
+                            tautybe.split("(")[-1][:-1] if "(" in tautybe else tautybe,
+                            pr_vilk, kaip_mokinys,
                             kadencijos_pabaiga.isoformat() if kadencijos_pabaiga else None,
                             atostogu_pabaiga.isoformat() if atostogu_pabaiga else None
                         )
@@ -206,10 +214,25 @@ def show(conn, c):
             'priskirtas_vilkikas': 'Priskirti vilkiką',
             'kadencijos_pabaiga': 'Kadencijos pabaiga',
             'atostogu_pabaiga': 'Atostogų pabaiga',
-            'kaip_mokinys': 'Kaip mokinys'
+            'kaip_mokinys': 'Kaip mokinys',
+            'tautybe': 'Tautybė'
         },
         inplace=True
     )
+    # Pridedam stulpelį statusui
+    statusas = []
+    for _, row in df.iterrows():
+        mok_vilk = row.get('kaip_mokinys', "")
+        if mok_vilk:
+            res = c.execute("SELECT COUNT(*) FROM vairuotojai WHERE priskirtas_vilkikas = ?", (mok_vilk,)).fetchone()
+            if res and res[0] == 0:
+                statusas.append("⚠️ Nėra pagrindinio vairuotojo")
+            else:
+                statusas.append("")
+        else:
+            statusas.append("")
+    df_disp["Įspėjimas"] = statusas
+
     # Filters
     filter_cols = st.columns(len(df_disp.columns)+1)
     for i, col in enumerate(df_disp.columns):

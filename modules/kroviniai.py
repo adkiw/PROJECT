@@ -13,7 +13,6 @@ EU_COUNTRIES = [
 ]
 
 def human_header(name):
-    # Automatiškai trumpina ir paverčia į max 2 eilučių headerį
     parts = name.split('_')
     if name.startswith("pakrovimo"):
         prefix = "Pakr."
@@ -43,11 +42,9 @@ def human_header(name):
 
 def show(conn, c):
     st.title("Užsakymų valdymas")
-
-    # Pridėti krovinį mygtukas po antrašte (pilno pločio, centre)
     add_clicked = st.button("➕ Pridėti naują krovinį", use_container_width=True)
 
-    # Užtikrinam visus laukus (KROVINIAI)
+    # Užtikrinam visus laukus
     existing = [r[1] for r in c.execute("PRAGMA table_info(kroviniai)").fetchall()]
     extras = {
         "pakrovimo_numeris": "TEXT", "pakrovimo_laikas_nuo": "TEXT", "pakrovimo_laikas_iki": "TEXT",
@@ -62,7 +59,7 @@ def show(conn, c):
             c.execute(f"ALTER TABLE kroviniai ADD COLUMN {col} {typ}")
     conn.commit()
 
-    # Užtikrinam, kad klientai turi likes_limitas
+    # Klientų limito likutis
     klientai_existing = [r[1] for r in c.execute("PRAGMA table_info(klientai)").fetchall()]
     if "likes_limitas" not in klientai_existing:
         c.execute("ALTER TABLE klientai ADD COLUMN likes_limitas REAL")
@@ -82,11 +79,9 @@ def show(conn, c):
     ]
     eksped_dropdown = [""] + eksped_vadybininkai
 
-    # Limito likutis (po užtikrinimo visada bus)
     df_klientai = pd.read_sql_query("SELECT pavadinimas, likes_limitas FROM klientai", conn)
     klientu_limitai = {row['pavadinimas']: row['likes_limitas'] for _, row in df_klientai.iterrows()}
 
-    # Vilkikai ir jų vadybininkai
     vilkikai_df = pd.read_sql_query("SELECT numeris, vadybininkas FROM vilkikai", conn)
     vilk_vad_map = {r['numeris']: r['vadybininkas'] for _, r in vilkikai_df.iterrows()}
 
@@ -104,7 +99,6 @@ def show(conn, c):
 
     sel = st.session_state['selected_cargo']
 
-    # Sutrumpinti headeriai (max 2 eilutės):
     header_labels = {
         "id": "ID",
         "busena": "Būsena",
@@ -122,7 +116,6 @@ def show(conn, c):
         "ekspedicijos_vadybininkas": "Ekspedicijos<br>vadyb.",
         "transporto_vadybininkas": "Transporto<br>vadyb."
     }
-
     norimi = [
         "id","busena","pakrovimo_data","iskrovimo_data","pakrovimo_salis","pakrovimo_regionas",
         "pakrovimo_miestas","iskrovimo_salis","iskrovimo_regionas","iskrovimo_miestas",
@@ -140,41 +133,45 @@ def show(conn, c):
             saraso_stulpeliai = norimi + papildomi
             df_disp = df[saraso_stulpeliai]
 
-            # --- SCROLL STILIUS ---
             st.markdown("""
                 <style>
-                .scroll-horizontal {overflow-x:auto; width:100%;}
-                .scroll-horizontal > div {min-width: 1100px;}
+                .scroll-horizontal {
+                    overflow-x: auto;
+                    width: 100%;
+                    padding-bottom: 8px;
+                }
+                .scroll-horizontal-inner {
+                    min-width: 1850px;
+                }
                 </style>
             """, unsafe_allow_html=True)
-            with st.container():
-                st.markdown('<div class="scroll-horizontal">', unsafe_allow_html=True)
-                filter_cols = st.columns(len(df_disp.columns)+1)
+            st.markdown('<div class="scroll-horizontal"><div class="scroll-horizontal-inner">', unsafe_allow_html=True)
+            filter_cols = st.columns(len(df_disp.columns)+1)
+            for i, col in enumerate(df_disp.columns):
+                filter_cols[i].text_input("", key=f"f_{col}")
+            filter_cols[-1].write("")
+
+            df_f = df_disp.copy()
+            for col in df_disp.columns:
+                v = st.session_state.get(f"f_{col}","")
+                if v:
+                    df_f = df_f[df_f[col].astype(str).str.contains(v, case=False, na=False)]
+
+            hdr = st.columns(len(df_disp.columns)+1)
+            for i, col in enumerate(df_disp.columns):
+                if col in header_labels:
+                    label = header_labels[col]
+                else:
+                    label = human_header(col)
+                hdr[i].markdown(f"<b>{label}</b>", unsafe_allow_html=True)
+            hdr[-1].markdown("<b>Veiksmai</b>", unsafe_allow_html=True)
+
+            for _, row in df_f.iterrows():
+                row_cols = st.columns(len(df_disp.columns)+1)
                 for i, col in enumerate(df_disp.columns):
-                    filter_cols[i].text_input("", key=f"f_{col}")
-                filter_cols[-1].write("")
-
-                df_f = df_disp.copy()
-                for col in df_disp.columns:
-                    v = st.session_state.get(f"f_{col}","")
-                    if v:
-                        df_f = df_f[df_f[col].astype(str).str.contains(v, case=False, na=False)]
-
-                hdr = st.columns(len(df_disp.columns)+1)
-                for i, col in enumerate(df_disp.columns):
-                    if col in header_labels:
-                        label = header_labels[col]
-                    else:
-                        label = human_header(col)
-                    hdr[i].markdown(f"<b>{label}</b>", unsafe_allow_html=True)
-                hdr[-1].markdown("<b>Veiksmai</b>", unsafe_allow_html=True)
-
-                for _, row in df_f.iterrows():
-                    row_cols = st.columns(len(df_disp.columns)+1)
-                    for i, col in enumerate(df_disp.columns):
-                        row_cols[i].write(row[col])
-                    row_cols[-1].button("✏️", key=f"edit_{row['id']}", on_click=edit_cargo, args=(row['id'],))
-                st.markdown('</div>', unsafe_allow_html=True)
+                    row_cols[i].write(row[col])
+                row_cols[-1].button("✏️", key=f"edit_{row['id']}", on_click=edit_cargo, args=(row['id'],))
+            st.markdown('</div></div>', unsafe_allow_html=True)
 
             csv = df_disp.to_csv(index=False, sep=';').encode('utf-8')
             st.download_button("💾 Eksportuoti kaip CSV", data=csv, file_name="kroviniai.csv", mime="text/csv")

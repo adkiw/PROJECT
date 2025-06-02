@@ -239,10 +239,18 @@ def show(conn, c):
         back = st.form_submit_button("🔙 Grįžti į sąrašą", on_click=clear_sel)
 
     if save:
-        # validations
         frachtas_float = float(fr.replace(",", ".") or 0)
         km_float = int(km or 0)
         limito_likutis = klientu_limitai.get(klientas, None)
+
+        # 1. Patikrinimas dėl užsakymo numerio (tik jei ne tuščias)
+        num_count = c.execute(
+            "SELECT COUNT(*) FROM kroviniai WHERE uzsakymo_numeris = ? AND (? IS NULL OR id != ?)",
+            (uzsak, sel if not is_new else None, sel if not is_new else None)
+        ).fetchone()[0]
+        if uzsak and num_count > 0:
+            st.warning("⚠️ Įspėjimas: toks užsakymo numeris jau yra duomenų bazėje! (Užsakymas vis tiek bus įrašytas.)")
+
         if pk_data > isk_data:
             st.error("Pakrovimo data negali būti vėlesnė už iškrovimo.")
         elif not klientas or not uzsak:

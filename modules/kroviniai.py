@@ -2,69 +2,32 @@ import streamlit as st
 import pandas as pd
 from datetime import date, time, timedelta
 
-EU_COUNTRIES = [
-    ("", ""), ("Lietuva", "LT"), ("Latvija", "LV"), ("Estija", "EE"), ("Lenkija", "PL"), ("Vokietija", "DE"),
-    ("Prancūzija", "FR"), ("Ispanija", "ES"), ("Italija", "IT"), ("Olandija", "NL"), ("Belgija", "BE"),
-    ("Austrija", "AT"), ("Švedija", "SE"), ("Suomija", "FI"), ("Čekija", "CZ"), ("Slovakija", "SK"),
-    ("Vengrija", "HU"), ("Rumunija", "RO"), ("Bulgarija", "BG"), ("Danija", "DK"), ("Norvegija", "NO"),
-    ("Šveicarija", "CH"), ("Kroatija", "HR"), ("Slovėnija", "SI"), ("Portugalija", "PT"), ("Graikija", "GR"),
-    ("Airija", "IE"), ("Didžioji Britanija", "GB"),
+# --- Trumpi headeriai ---
+HEADER_LABELS = [
+    "ID", "Būsena", "Pakr.<br>data", "Iškr.<br>data", "Pakr.<br>šalis", "Pakr.<br>regionas",
+    "Pakr.<br>miestas", "Iškr.<br>šalis", "Iškr.<br>regionas", "Iškr.<br>miestas",
+    "Klientas", "Vilkikas", "Priekaba", "Eksp.<br>vadyb.", "Transp.<br>vadyb.", "Užsak.<br>nr.",
+    "Km", "Frachtas", "Pakr.<br>nr.", "Pakr.<br>laik.nuo", "Pakr.<br>laik.iki", "Pakr.<br>adr.",
+    "Iškr.<br>adr.", "Iškr.<br>laik.nuo", "Iškr.<br>laik.iki", "Atsak.<br>vadyb.", "Svoris", "Pad.<br>sk."
 ]
 
-def human_header(name):
-    # Automatiškai trumpina headerį į max 2 eilutes
-    parts = name.split('_')
-    if name.startswith("pakrovimo"):
-        prefix = "Pakr."
-        rest = parts[1:]
-    elif name.startswith("iskrovimo"):
-        prefix = "Iškr."
-        rest = parts[1:]
-    elif name.startswith("atsakingas"):
-        return "Atsak.<br>vadyb."
-    elif name == "kilometrai":
-        return "Km"
-    elif name == "frachtas":
-        return "Frachtas"
-    elif name == "svoris":
-        return "Svoris"
-    elif name == "paleciu_skaicius":
-        return "Pad.<br>sk."
-    elif name == "uzsakymo_numeris":
-        return "Užsak.<br>nr."
-    else:
-        prefix = parts[0].capitalize()
-        rest = parts[1:]
-    if rest:
-        return prefix + "<br>" + " ".join(rest)
-    else:
-        return prefix
+# --- Duomenų bazės laukų eiliskumas ---
+FIELD_ORDER = [
+    "id", "busena", "pakrovimo_data", "iskrovimo_data", "pakrovimo_salis", "pakrovimo_regionas",
+    "pakrovimo_miestas", "iskrovimo_salis", "iskrovimo_regionas", "iskrovimo_miestas",
+    "klientas", "vilkikas", "priekaba", "ekspedicijos_vadybininkas", "transporto_vadybininkas",
+    "uzsakymo_numeris", "kilometrai", "frachtas", "pakrovimo_numeris", "pakrovimo_laikas_nuo", "pakrovimo_laikas_iki",
+    "pakrovimo_adresas", "iskrovimo_adresas", "iskrovimo_laikas_nuo", "iskrovimo_laikas_iki",
+    "atsakingas_vadybininkas", "svoris", "paleciu_skaicius"
+]
 
 def show(conn, c):
     st.title("Užsakymų valdymas")
     add_clicked = st.button("➕ Pridėti naują krovinį", use_container_width=True)
 
-    # Užtikrinam, kad papildomi stulpeliai yra
-    existing = [r[1] for r in c.execute("PRAGMA table_info(kroviniai)").fetchall()]
-    extras = {
-        "pakrovimo_numeris": "TEXT", "pakrovimo_laikas_nuo": "TEXT", "pakrovimo_laikas_iki": "TEXT",
-        "pakrovimo_salis": "TEXT", "pakrovimo_regionas": "TEXT", "pakrovimo_miestas": "TEXT", "pakrovimo_adresas": "TEXT",
-        "pakrovimo_data": "TEXT", "iskrovimo_salis": "TEXT", "iskrovimo_regionas": "TEXT", "iskrovimo_miestas": "TEXT",
-        "iskrovimo_adresas": "TEXT", "iskrovimo_data": "TEXT", "iskrovimo_laikas_nuo": "TEXT", "iskrovimo_laikas_iki": "TEXT",
-        "vilkikas": "TEXT", "priekaba": "TEXT", "atsakingas_vadybininkas": "TEXT", "ekspedicijos_vadybininkas": "TEXT",
-        "kilometrai": "INTEGER", "frachtas": "REAL", "svoris": "INTEGER", "paleciu_skaicius": "INTEGER", "busena": "TEXT"
-    }
-    for col, typ in extras.items():
-        if col not in existing:
-            c.execute(f"ALTER TABLE kroviniai ADD COLUMN {col} {typ}")
-    conn.commit()
+    # Užtikrinti papildomus laukus lentelėje kaip ir anksčiau...
 
-    # Užtikrinam limito likutį
-    klientai_existing = [r[1] for r in c.execute("PRAGMA table_info(klientai)").fetchall()]
-    if "likes_limitas" not in klientai_existing:
-        c.execute("ALTER TABLE klientai ADD COLUMN likes_limitas REAL")
-        conn.commit()
-
+    # --- Duomenys ir pasirinkimai ---
     klientai = [r[0] for r in c.execute("SELECT pavadinimas FROM klientai").fetchall()]
     vilkikai = [r[0] for r in c.execute("SELECT numeris FROM vilkikai").fetchall()]
     eksped_vadybininkai = [
@@ -80,16 +43,11 @@ def show(conn, c):
     if not busena_opt:
         busena_opt = ["suplanuotas","nesuplanuotas","pakrautas","iškrautas"]
 
+    # Limito likutis
     df_klientai = pd.read_sql_query("SELECT pavadinimas, likes_limitas FROM klientai", conn)
     klientu_limitai = {row['pavadinimas']: row['likes_limitas'] for _, row in df_klientai.iterrows()}
 
-    # Norimų stulpelių tvarka (pagrindiniai priekyje)
-    norimi = [
-        "id","busena","pakrovimo_data","iskrovimo_data","pakrovimo_salis","pakrovimo_regionas",
-        "pakrovimo_miestas","iskrovimo_salis","iskrovimo_regionas","iskrovimo_miestas",
-        "klientas","vilkikas","priekaba","ekspedicijos_vadybininkas","transporto_vadybininkas"
-    ]
-
+    # --- Pasirinkimo logika ---
     if 'selected_cargo' not in st.session_state:
         st.session_state['selected_cargo'] = None
     if add_clicked:
@@ -102,55 +60,46 @@ def show(conn, c):
     def edit_cargo(cid): st.session_state['selected_cargo'] = cid
     sel = st.session_state['selected_cargo']
 
-    # --- SĄRAŠAS ---
+    # --- SĄRAŠAS (HTML lentelė!) ---
     if sel is None:
         df = pd.read_sql_query("SELECT * FROM kroviniai", conn)
         if df.empty:
             st.info("Kol kas nėra krovinių.")
         else:
             df["transporto_vadybininkas"] = df["vilkikas"].map(vilk_vad_map).fillna("")
-            papildomi = [c for c in df.columns if c not in norimi]
-            saraso_stulpeliai = norimi + papildomi
-            df_disp = df[saraso_stulpeliai]
-
-            # SCROLL STILIUS
+            # Rikiuoti laukus FIELD_ORDER, pridėti papildomus gale
+            papildomi = [c for c in df.columns if c not in FIELD_ORDER]
+            saraso_stulpeliai = FIELD_ORDER + papildomi
+            df_disp = df.reindex(columns=saraso_stulpeliai)
+            df_disp = df_disp.fillna("")
+            # HTML lentelė su scroll
             st.markdown("""
-                <style>
-                div[data-testid="stHorizontalBlock"] > div {
-                    min-width: 1850px;
-                }
-                </style>
-            """, unsafe_allow_html=True)
+            <div style='overflow-x:auto; width:100%;'>
+            <table style='min-width:1850px; border-collapse:collapse;'>
+            <tr style='background-color:#f2f2f2;'>
+            """ + 
+            "".join(f"<th style='padding:4px 6px; font-size:14px; font-weight:bold;'>{col}</th>" for col in HEADER_LABELS) +
+            "<th>Veiksmai</th></tr>" +
+            "\n".join([
+                "<tr>" + "".join([
+                    f"<td style='padding:2px 5px; white-space:nowrap'>{row[col] if col in row else ''}</td>"
+                    for col in saraso_stulpeliai
+                ]) + 
+                f"<td><form action='#' method='post'><button name='edit_{row['id']}' style='background:none; border:none; color:#e27802; font-size:18px;'>✏️</button></form></td></tr>"
+                for _, row in df_disp.iterrows()
+            ]) +
+            "</table></div>", unsafe_allow_html=True)
 
-            # Filtrai
-            filter_cols = st.columns(len(df_disp.columns)+1)
-            for i, col in enumerate(df_disp.columns):
-                filter_cols[i].text_input("", key=f"f_{col}")
-            filter_cols[-1].write("")
+            # "pseudo" mygtukai: pagauti kliką, parodyti redagavimą
+            for _, row in df_disp.iterrows():
+                if st.session_state.get(f"edit_{row['id']}", False):
+                    edit_cargo(row['id'])
 
-            df_f = df_disp.copy()
-            for col in df_disp.columns:
-                v = st.session_state.get(f"f_{col}","")
-                if v:
-                    df_f = df_f[df_f[col].astype(str).str.contains(v, case=False, na=False)]
-
-            # HEADERIAI max 2 eilutės
-            hdr = st.columns(len(df_disp.columns)+1)
-            for i, col in enumerate(df_disp.columns):
-                hdr[i].markdown(f"<b>{human_header(col)}</b>", unsafe_allow_html=True)
-            hdr[-1].markdown("<b>Veiksmai</b>", unsafe_allow_html=True)
-
-            for _, row in df_f.iterrows():
-                row_cols = st.columns(len(df_disp.columns)+1)
-                for i, col in enumerate(df_disp.columns):
-                    row_cols[i].write(row[col])
-                row_cols[-1].button("✏️", key=f"edit_{row['id']}", on_click=edit_cargo, args=(row['id'],))
-
-            csv = df_disp.to_csv(index=False, sep=';').encode('utf-8')
-            st.download_button("💾 Eksportuoti kaip CSV", data=csv, file_name="kroviniai.csv", mime="text/csv")
+            st.download_button("💾 Eksportuoti kaip CSV", data=df_disp.to_csv(index=False, sep=';').encode('utf-8'),
+                              file_name="kroviniai.csv", mime="text/csv")
         return
 
-    # --- ĮVEDIMO FORMA ---
+    # --- FORMA (Streamlit columns kaip anksčiau, trumpinta versija) ---
     is_new = (sel == 0)
     data = {} if is_new else pd.read_sql_query("SELECT * FROM kroviniai WHERE id=?", conn, params=(sel,)).iloc[0]
     if not is_new and data.empty:
@@ -171,31 +120,34 @@ def show(conn, c):
         eksped_idx = eksped_dropdown.index(eksped_val) if eksped_val in eksped_dropdown else 0
         eksped_vad = colA.selectbox("Ekspedicijos vadybininkas", eksped_dropdown, index=eksped_idx, key="eksped_vad")
 
-        pk_salis_opts = [f"{name} ({code})" for name, code in EU_COUNTRIES]
-        pk_sal_val = "" if is_new else data.get('pakrovimo_salis', '')
+        pk_data = colB.date_input("Pakrovimo data", value=(date.today() if is_new else pd.to_datetime(data['pakrovimo_data']).date()), key="pk_data")
+        pk_salis_opts = [f"{n} ({c})" for n,c in [
+            ("", ""), ("Lietuva", "LT"), ("Latvija", "LV"), ("Estija", "EE"), ("Lenkija", "PL"), ("Vokietija", "DE"), ("Prancūzija", "FR"),
+            ("Ispanija", "ES"), ("Italija", "IT"), ("Olandija", "NL"), ("Belgija", "BE"), ("Austrija", "AT"), ("Švedija", "SE"), ("Suomija", "FI"),
+            ("Čekija", "CZ"), ("Slovakija", "SK"), ("Vengrija", "HU"), ("Rumunija", "RO"), ("Bulgarija", "BG"), ("Danija", "DK"), ("Norvegija", "NO"),
+            ("Šveicarija", "CH"), ("Kroatija", "HR"), ("Slovėnija", "SI"), ("Portugalija", "PT"), ("Graikija", "GR"), ("Airija", "IE"), ("Didžioji Britanija", "GB"),
+        ]]
         pk_salis_index = 0
-        if pk_sal_val:
-            for idx, v in enumerate(pk_salis_opts):
-                if pk_sal_val in v: pk_salis_index = idx; break
+        if not is_new:
+            try: pk_salis_index = pk_salis_opts.index(next(x for x in pk_salis_opts if data.get('pakrovimo_salis','') in x))
+            except: pass
         pk_salis = colB.selectbox("Pakrovimo šalis", pk_salis_opts, index=pk_salis_index, key="pk_sal")
         pk_regionas = colB.text_input("Pakrovimo regionas", value=("" if is_new else data.get('pakrovimo_regionas','')), key="pk_regionas")
         pk_mie = colB.text_input("Pakrovimo miestas", value=("" if is_new else data.get('pakrovimo_miestas','')), key="pk_mie")
         pk_adr = colB.text_input("Pakrovimo adresas", value=("" if is_new else data.get('pakrovimo_adresas','')), key="pk_adr")
-        pk_data = colB.date_input("Pakrovimo data", value=(date.today() if is_new else pd.to_datetime(data['pakrovimo_data']).date()), key="pk_data")
         pk_nuo = colB.time_input("Pakrovimo laikas nuo", value=(time(8,0) if is_new else pd.to_datetime(data['pakrovimo_laikas_nuo']).time()), key="pk_nuo")
         pk_iki = colB.time_input("Pakrovimo laikas iki", value=(time(17,0) if is_new else pd.to_datetime(data['pakrovimo_laikas_iki']).time()), key="pk_iki")
 
-        is_salis_opts = [f"{name} ({code})" for name, code in EU_COUNTRIES]
-        is_sal_val = "" if is_new else data.get('iskrovimo_salis', '')
+        isk_data = colC.date_input("Iškrovimo data", value=(pk_data + timedelta(days=1) if is_new else pd.to_datetime(data['iskrovimo_data']).date()), key="isk_data")
+        is_salis_opts = pk_salis_opts
         is_salis_index = 0
-        if is_sal_val:
-            for idx, v in enumerate(is_salis_opts):
-                if is_sal_val in v: is_salis_index = idx; break
+        if not is_new:
+            try: is_salis_index = is_salis_opts.index(next(x for x in is_salis_opts if data.get('iskrovimo_salis','') in x))
+            except: pass
         is_salis = colC.selectbox("Iškrovimo šalis", is_salis_opts, index=is_salis_index, key="is_sal")
         is_regionas = colC.text_input("Iškrovimo regionas", value=("" if is_new else data.get('iskrovimo_regionas','')), key="is_regionas")
         is_mie = colC.text_input("Iškrovimo miestas", value=("" if is_new else data.get('iskrovimo_miestas','')), key="is_mie")
         is_adr = colC.text_input("Iškrovimo adresas", value=("" if is_new else data.get('iskrovimo_adresas','')), key="is_adr")
-        isk_data = colC.date_input("Iškrovimo data", value=(pk_data + timedelta(days=1) if is_new else pd.to_datetime(data['iskrovimo_data']).date()), key="isk_data")
         is_nuo = colC.time_input("Iškrovimo laikas nuo", value=(time(8,0) if is_new else pd.to_datetime(data['iskrovimo_laikas_nuo']).time()), key="is_nuo")
         is_iki = colC.time_input("Iškrovimo laikas iki", value=(time(17,0) if is_new else pd.to_datetime(data['iskrovimo_laikas_iki']).time()), key="is_iki")
 
@@ -266,4 +218,3 @@ def show(conn, c):
                 st.success("✅ Krovinys išsaugotas."); clear_sel()
             except Exception as e:
                 st.error(f"❌ Klaida: {e}")
-

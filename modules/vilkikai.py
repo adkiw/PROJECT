@@ -2,8 +2,6 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 
-# modules/vilkikai.py
-
 def show(conn, c):
     # 1) Ensure needed columns exist
     existing = [r[1] for r in c.execute("PRAGMA table_info(vilkikai)").fetchall()]
@@ -22,11 +20,10 @@ def show(conn, c):
     conn.commit()
 
     # 2) Dropdown data
-    priekabu_list    = [r[0] for r in c.execute("SELECT numeris FROM priekabos").fetchall()]
-    markiu_list      = [r[0] for r in c.execute("SELECT reiksme FROM lookup WHERE kategorija = 'Markė'").fetchall()]
+    priekabu_list = [r[0] for r in c.execute("SELECT numeris FROM priekabos").fetchall()]
+    markiu_list = [r[0] for r in c.execute("SELECT reiksme FROM lookup WHERE kategorija = 'Markė'").fetchall()]
     vairuotoju_list = [f"{r[1]} {r[2]}" for r in c.execute("SELECT id, vardas, pavarde FROM vairuotojai").fetchall()]
 
-    # Transporto vadybininko dropdown iš darbuotojai
     vadybininku_list = [
         f"{r[0]} {r[1]}"
         for r in c.execute(
@@ -58,17 +55,22 @@ def show(conn, c):
     st.markdown("### 🔄 Bendras priekabų priskirstymas")
     with st.form("priekabu_priskirt_forma", clear_on_submit=True):
         vilk_list = [""] + [r[0] for r in c.execute("SELECT numeris FROM vilkikai").fetchall()]
-        pr_opts   = [""]
+        pr_opts = [""]
         for num in priekabu_list:
             assigned = [r[0] for r in c.execute("SELECT numeris FROM vilkikai WHERE priekaba = ?", (num,)).fetchall()]
             pr_opts.append(
                 f"🔴 {num} ({', '.join(assigned)})" if assigned else f"🟢 {num} (laisva)"
             )
-        sel_vilk  = st.selectbox("Pasirinkite vilkiką", vilk_list)
+        sel_vilk = st.selectbox("Pasirinkite vilkiką", vilk_list)
         sel_priek = st.selectbox("Pasirinkite priekabą", pr_opts)
-        upd       = st.form_submit_button("💾 Išsaugoti")
+        upd = st.form_submit_button("💾 Išsaugoti")
     if upd and sel_vilk:
-        prn = sel_priek.split()[1] if sel_priek.startswith(("🟢","🔴")) else None
+        # Tikrinimas: ar yra bent du split elementai
+        prn = None
+        if sel_priek and (sel_priek.startswith("🟢") or sel_priek.startswith("🔴")):
+            split = sel_priek.split()
+            if len(split) > 1:
+                prn = split[1]
         c.execute("UPDATE vilkikai SET priekaba = ? WHERE numeris = ?", (prn, sel_vilk))
         conn.commit()
         st.success(f"✅ Priekaba {prn or '(tuščia)'} priskirta {sel_vilk}.")
@@ -85,7 +87,6 @@ def show(conn, c):
         df_disp.rename(columns={'marke': 'Modelis',
                                  'pagaminimo_metai': 'Pirmos registracijos data'},
                        inplace=True)
-        # Safe split drivers
         drivers = df_disp.get('vairuotojai', pd.Series(dtype=str)).fillna('')
         drivers_df = drivers.str.split(', ', n=1, expand=True)
         if 1 not in drivers_df:
@@ -93,15 +94,12 @@ def show(conn, c):
         df_disp['Vairuotojas 1'] = drivers_df[0]
         df_disp['Vairuotojas 2'] = drivers_df[1]
         df_disp.drop(columns=['vairuotojai'], inplace=True)
-        # Rename vadybininkas
         df_disp.rename(columns={'vadybininkas': 'Transporto vadybininkas'}, inplace=True)
-        # Days left columns
         df_disp['Liko iki tech apžiūros'] = df_disp['tech_apziura'].apply(
             lambda x: (date.fromisoformat(x) - date.today()).days if x else None)
         df_disp['Liko iki draudimo'] = df_disp['draudimas'].apply(
             lambda x: (date.fromisoformat(x) - date.today()).days if x else None)
 
-        # Filters
         filter_cols = st.columns(len(df_disp.columns) + 1)
         for i, col in enumerate(df_disp.columns):
             filter_cols[i].text_input(col, key=f"f_{col}")
@@ -112,7 +110,6 @@ def show(conn, c):
             if val:
                 df_filt = df_filt[df_filt[col].astype(str).str.contains(val, case=False, na=False)]
 
-        # Header and rows
         hdr = st.columns(len(df_filt.columns) + 1)
         for i, col in enumerate(df_filt.columns): hdr[i].markdown(f"**{col}**")
         hdr[-1].markdown("**Veiksmai**")
@@ -121,7 +118,6 @@ def show(conn, c):
             for i, col in enumerate(df_filt.columns): row_cols[i].write(row[col])
             row_cols[-1].button("✏️", key=f"edit_{row['numeris']}", on_click=edit_vilk, args=(row['numeris'],))
 
-        # CSV export
         csv = df.to_csv(index=False, sep=';').encode('utf-8')
         st.download_button(label="💾 Eksportuoti kaip CSV", data=csv, file_name="vilkikai.csv", mime="text/csv")
         return
@@ -181,8 +177,11 @@ def show(conn, c):
             )
         pr_idx = 0
         if not is_new and vilk['priekaba']:
-            for i,opt in enumerate(pr_opts):
-                if opt.split()[1]==vilk['priekaba']: pr_idx=i; break
+            for i, opt in enumerate(pr_opts):
+                split = opt.split()
+                if len(split) > 1 and split[1] == vilk['priekaba']:
+                    pr_idx = i
+                    break
         sel_pr = col2.selectbox("Priekaba", pr_opts, index=pr_idx)
 
         back = st.form_submit_button("🔙 Grįžti į sąrašą", on_click=clear_selection)
@@ -192,8 +191,12 @@ def show(conn, c):
         if not numeris:
             st.warning("⚠️ Įveskite vilkiko numerį.")
         else:
-            draud = ", ".join(filter(None, [v1,v2])) or None
-            prn = sel_pr.split()[1] if sel_pr.startswith(("🟢","🔴")) else None
+            draud = ", ".join(filter(None, [v1, v2])) or None
+            prn = None
+            if sel_pr and (sel_pr.startswith("🟢") or sel_pr.startswith("🔴")):
+                split = sel_pr.split()
+                if len(split) > 1:
+                    prn = split[1]
             try:
                 if is_new:
                     c.execute(

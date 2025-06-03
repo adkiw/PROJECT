@@ -2,17 +2,15 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 
-# CSS pradžioje - paslepia dropdown ikonėles
+# CSS turi būti po st.set_page_config, bet prieš visą kitą
 st.markdown("""
     <style>
     th, td {font-size: 12px !important;}
     .tiny {font-size:10px;color:#888;}
     .stTextInput>div>div>input {font-size:12px !important; min-height:2em;}
     .block-container { padding-top: 0.5rem !important;}
-    /* Leidžiame horizontalią slinktį, kai stulpeliai netelpa */
     .streamlit-expanderHeader { overflow-x: auto; }
     .stDataFrame div[role="columnheader"] { white-space: nowrap; }
-    /* Pašaliname varnelę ir rodyklę selectbox pasirinkimuose */
     div[role="option"] svg, div[role="combobox"] svg, span[data-baseweb="select"] svg { display: none !important; }
     </style>
 """, unsafe_allow_html=True)
@@ -85,7 +83,7 @@ def show(conn, c):
         st.info("Nėra būsimų krovinių šiems vilkikams pagal nurodytą filtrą.")
         return
 
-    # Nauja: Transporto grupė ir Ekspedicinė grupė paėmimas
+    # Transporto ir ekspedicinė grupė paėmimas
     vilk_grupes = dict(c.execute("""
         SELECT v.numeris, g.pavadinimas FROM vilkikai v
         LEFT JOIN darbuotojai d ON v.vadybininkas = d.vardas
@@ -162,7 +160,6 @@ def show(conn, c):
             ORDER BY id DESC LIMIT 1
         """, (k[5], k[3])).fetchone()
 
-        # Duomenų ištraukimas
         sa = darbo[0] if darbo and darbo[0] else ""
         bdl = darbo[1] if darbo and darbo[1] not in [None, ""] else ""
         ldl = darbo[2] if darbo and darbo[2] not in [None, ""] else ""
@@ -212,14 +209,13 @@ def show(conn, c):
         row_cols[9].write(vieta_is[:18])
         # 10) Km
         row_cols[10].write(str(k[15]))
-        # 11) Transporto grupė (naujas laukelis)
+        # 11) Transporto grupė
         row_cols[11].write(trans_gr or "")
         # 12) Transporto vadybininkas
-        # Tiesiog rodoma kaip tekstas, ne input
         row_cols[12].write(vadyb)
-        # 13) Ekspedicinė grupė (naujas laukelis)
+        # 13) Ekspedicinė grupė
         row_cols[13].write(eksp_gr or "")
-        # 14) Ekspedicijos vadybininkas (iš krovinio)
+        # 14) Ekspedicijos vadybininkas
         row_cols[14].write(k[16] if len(k) > 16 else "")
 
         # 15-17) SA, BDL, LDL – input

@@ -115,7 +115,11 @@ def show(conn, c):
 
             filter_cols = st.columns(len(df_disp.columns)+1)
             for i, col in enumerate(df_disp.columns):
-                filter_cols[i].text_input("", key=f"f_{col}")
+                filter_cols[i].text_input(
+                    " ",  # tuščias, bet ' ' leidžia
+                    key=f"f_{col}",
+                    label_visibility="collapsed"
+                )
             filter_cols[-1].write("")
 
             df_f = df_disp.copy()

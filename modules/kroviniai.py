@@ -2,6 +2,9 @@ import streamlit as st
 import pandas as pd
 from datetime import date, time, timedelta
 
+# Svarbu: PASIKEISK čia pagal tikslų savo DB stulpelio vardą!
+KLIENTU_LIMITO_LAUKAS = "musu_limitas"  # pvz. musu_limitas, limito_likutis, likes_limitas
+
 EU_COUNTRIES = [
     ("", ""), ("Lietuva", "LT"), ("Latvija", "LV"), ("Estija", "EE"), ("Lenkija", "PL"), ("Vokietija", "DE"),
     ("Prancūzija", "FR"), ("Ispanija", "ES"), ("Italija", "IT"), ("Olandija", "NL"), ("Belgija", "BE"),
@@ -55,7 +58,7 @@ def show(conn, c):
     st.title("Užsakymų valdymas")
     add_clicked = st.button("➕ Pridėti naują krovinį", use_container_width=True)
 
-    # Užtikrinti laukus DB
+    # Lentelės papildomų laukų garantavimas (jei reikia)
     existing = [r[1] for r in c.execute("PRAGMA table_info(kroviniai)").fetchall()]
     extras = {k: "TEXT" for k in [
         "pakrovimo_numeris", "pakrovimo_laikas_nuo", "pakrovimo_laikas_iki", "pakrovimo_salis", "pakrovimo_regionas",
@@ -81,8 +84,10 @@ def show(conn, c):
     busena_opt = [r[0] for r in c.execute("SELECT reiksme FROM lookup WHERE kategorija = ?", ("busena",)).fetchall()]
     if not busena_opt:
         busena_opt = ["suplanuotas", "nesuplanuotas", "pakrautas", "iškrautas"]
-    df_klientai = pd.read_sql_query("SELECT pavadinimas, likes_limitas FROM klientai", conn)
-    klientu_limitai = {row['pavadinimas']: row['likes_limitas'] for _, row in df_klientai.iterrows()}
+
+    # Pakeisk čia į savo realų stulpelį (musu_limitas, limito_likutis, likes_limitas)
+    df_klientai = pd.read_sql_query(f"SELECT pavadinimas, {KLIENTU_LIMITO_LAUKAS} as limito_likutis FROM klientai", conn)
+    klientu_limitai = {row['pavadinimas']: row['limito_likutis'] for _, row in df_klientai.iterrows()}
 
     if 'selected_cargo' not in st.session_state:
         st.session_state['selected_cargo'] = None
@@ -106,16 +111,48 @@ def show(conn, c):
             papildomi = [c for c in df.columns if c not in FIELD_ORDER]
             saraso_stulpeliai = FIELD_ORDER + papildomi
             df_disp = df[saraso_stulpeliai].fillna("")
-            # SCROLL stilius
+
+            # Lentelės stilius (borderiai, scroll, mažesni fontai)
             st.markdown("""
             <style>
-            .st-emotion-cache-1avcm0n {min-width: 1850px;}
+            .custom-table-wrap {
+                overflow-x: auto;
+                border: 1px solid #ccc;
+                margin-bottom: 12px;
+            }
+            table.custom-table {
+                border-collapse: collapse;
+                width: 100%;
+                min-width: 1700px;
+                font-size: 15px;
+            }
+            .custom-table th, .custom-table td {
+                border: 1px solid #bbb;
+                padding: 2px 6px;
+                text-align: left;
+                vertical-align: top;
+                white-space: pre-line;
+            }
+            .custom-table th {
+                background: #f5f5f5;
+                font-size: 14px;
+                font-weight: 700;
+                text-align: center;
+            }
+            .custom-table tr:hover td {
+                background: #f1efdc;
+            }
             </style>
             """, unsafe_allow_html=True)
 
+            # Filtrų eilutė
             filter_cols = st.columns(len(df_disp.columns)+1)
             for i, col in enumerate(df_disp.columns):
-                filter_cols[i].text_input("", key=f"f_{col}")
+                filter_cols[i].text_input(
+                    " ",  # tuščias, bet ' ' leidžia
+                    key=f"f_{col}",
+                    label_visibility="collapsed"
+                )
             filter_cols[-1].write("")
 
             df_f = df_disp.copy()
@@ -124,17 +161,28 @@ def show(conn, c):
                 if v:
                     df_f = df_f[df_f[col].astype(str).str.contains(v, case=False, na=False)]
 
-            hdr = st.columns(len(df_disp.columns)+1)
-            for i, col in enumerate(df_disp.columns):
-                label = HEADER_LABELS.get(col, col.replace("_", "<br>")[:14])
-                hdr[i].markdown(f"<b>{label}</b>", unsafe_allow_html=True)
-            hdr[-1].markdown("<b>Veiksmai</b>", unsafe_allow_html=True)
+            # HEADERS
+            html = "<div class='custom-table-wrap'><table class='custom-table'><thead><tr>"
+            for col in df_disp.columns:
+                label = HEADER_LABELS.get(col, col.replace("_", "<br>")[:16])
+                html += f"<th>{label}</th>"
+            html += "<th>Veiksmai</th></tr></thead><tbody>"
 
+            # DUOMENYS
             for _, row in df_f.iterrows():
-                row_cols = st.columns(len(df_disp.columns)+1)
-                for i, col in enumerate(df_disp.columns):
-                    row_cols[i].write(row[col])
-                row_cols[-1].button("✏️", key=f"edit_{row['id']}", on_click=edit_cargo, args=(row['id'],))
+                html += "<tr>"
+                for col in df_disp.columns:
+                    html += f"<td>{row[col]}</td>"
+                # Pieštukas
+                html += f"<td><form action='#' method='post'><button name='edit_{row['id']}' type='submit' style='background:none; border:none; color:#b65e03; font-size:18px;'>✏️</button></form></td></tr>"
+            html += "</tbody></table></div>"
+            st.markdown(html, unsafe_allow_html=True)
+
+            # Pieštuko "pseudo" mygtukai (suras kliką)
+            for _, row in df_f.iterrows():
+                if st.session_state.get(f"edit_{row['id']}", False):
+                    edit_cargo(row['id'])
+
             st.download_button("💾 Eksportuoti kaip CSV", data=df_disp.to_csv(index=False, sep=';').encode('utf-8'),
                               file_name="kroviniai.csv", mime="text/csv")
         return

@@ -69,7 +69,14 @@ def show(conn, c):
             c.execute(f"ALTER TABLE kroviniai ADD COLUMN {col} {typ}")
     conn.commit()
 
+    # ---- Duomenų pasirinkimai ----
     klientai = [r[0] for r in c.execute("SELECT pavadinimas FROM klientai").fetchall()]
+
+    # Jeigu nėra klientų
+    if len(klientai) == 0:
+        st.warning("Nėra nė vieno kliento! Pridėkite klientą modulyje **Klientai** ir grįžkite čia.")
+        return
+
     vilkikai = [r[0] for r in c.execute("SELECT numeris FROM vilkikai").fetchall()]
     eksped_vadybininkai = [
         f"{r[0]} {r[1]}"
@@ -106,10 +113,10 @@ def show(conn, c):
             papildomi = [c for c in df.columns if c not in FIELD_ORDER]
             saraso_stulpeliai = FIELD_ORDER + papildomi
             df_disp = df[saraso_stulpeliai].fillna("")
-            # SCROLL stilius
             st.markdown("""
             <style>
             .st-emotion-cache-1avcm0n {min-width: 1850px;}
+            .stDataFrame thead tr th { white-space:pre-line; }
             </style>
             """, unsafe_allow_html=True)
 

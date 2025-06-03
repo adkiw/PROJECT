@@ -157,11 +157,11 @@ def show(conn, c):
 
         pk_status = darbo[4] if darbo and darbo[4] else ""
         pk_laikas = darbo[5] if darbo and darbo[5] else (str(k[7])[:5] if k[7] else "")
-        pk_data = darba[6] if darbo and darbo[6] else str(k[3])
+        pk_data = darbo[6] if darbo and darbo[6] else str(k[3])    # pataisyta: darbo[6], ne darba[6]
 
         ikr_status = darbo[7] if darbo and darbo[7] else ""
         ikr_laikas = darbo[8] if darbo and darbo[8] else (str(k[9])[:5] if k[9] else "")
-        ikr_data = darbo[9] if darbo and darbo[9] else str(k[4])
+        ikr_data = darbo[9] if darbo and darbo[9] else str(k[4])   # pataisyta: darbo[9]
 
         komentaras = darbo[10] if darbo and darbo[10] else ""
         ats_trans_vadyb = darbo[11] if darbo and darbo[11] else ""

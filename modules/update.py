@@ -5,15 +5,15 @@ from datetime import datetime, timedelta
 def generate_time_list(step_minutes=15):
     return [f"{h:02}:{m:02}" for h in range(24) for m in range(0, 60, step_minutes)]
 
-def status_bg_color(status, pakrovimas=True):
-    if status == ("Pakrauta" if pakrovimas else "Iškrauta"):
-        return "#c7f7c3" # žalia
-    elif status == "Atvyko":
-        return "#b4e2fa" # žydra
-    elif status == "Kita":
-        return "#ffe3ba" # oranžinė
-    else:
-        return "white"
+def status_dot(status, pakrovimas=True):
+    color_map = {
+        "Pakrauta": "#53d965",
+        "Iškrauta": "#53d965",
+        "Atvyko": "#3cc1fa",
+        "Kita": "#ffb84b"
+    }
+    color = color_map.get(status, "#cccccc")
+    return f"<span style='display:inline-block;width:14px;height:14px;background:{color};border-radius:50%;margin-left:6px;vertical-align:middle;'></span>"
 
 def atnaujinta_color(created, iskrovimo_status):
     if iskrovimo_status != "Iškrauta" and created:
@@ -28,7 +28,7 @@ def show(conn, c):
         th, td {font-size: 12px !important;}
         .tiny {font-size:10px;color:#888;}
         .stTextInput>div>div>input, .stNumberInput>div>div>input, .stSelectbox>div>div>div {font-size:12px !important; min-height:2em;}
-        label, .css-1cpxqw2 {font-size: 11px !important;}
+        .css-1cpxqw2 {font-size: 11px !important;}
         .block-container { padding-top: 0.5rem !important;}
         </style>
     """, unsafe_allow_html=True)
@@ -89,11 +89,11 @@ def show(conn, c):
         return
 
     col_widths = [
-        0.42, 0.7, 0.7, 0.92, 0.7, 0.7, 0.41, 0.4, 
-        0.45, 0.47, 0.47, # SA BDL LDL
-        0.96, 0.55, 0.75, # Pakrovimo update
-        0.96, 0.55, 0.75, # Iškrovimo update
-        1.09, 0.85, 0.45  # Komentaras, Atnaujinta, Save
+        0.43, 0.71, 0.69, 1, 0.7, 0.7, 0.42, 0.4, 
+        0.48, 0.48, 0.48, # SA BDL LDL
+        1.08, 0.58, 0.8, # Pakrovimo update
+        1.08, 0.58, 0.8, # Iškrovimo update
+        1.13, 0.9, 0.51  # Komentaras, Atnaujinta, Save
     ]
     headers = [
         "Vilkikas", "Pakr. data", "Pakr. laikas", "Pakrovimo vieta", "Iškr. data", "Iškr. laikas", 
@@ -102,7 +102,7 @@ def show(conn, c):
     ]
     cols = st.columns(col_widths)
     for i, label in enumerate(headers):
-        if i in [11,14]: # tik headeriai virš update laukų
+        if i in [11,14]:
             cols[i].markdown(f"<b>{label}</b>", unsafe_allow_html=True)
         else:
             cols[i].markdown(f"{label}", unsafe_allow_html=True)
@@ -137,7 +137,7 @@ def show(conn, c):
         pk_laiko_label = f"{str(k[7])[:5]} - {str(k[8])[:5]}" if k[7] and k[8] else (str(k[7])[:5] if k[7] else (str(k[8])[:5] if k[8] else ""))
         ikr_laiko_label = f"{str(k[9])[:5]} - {str(k[10])[:5]}" if k[9] and k[10] else (str(k[9])[:5] if k[9] else (str(k[10])[:5] if k[10] else ""))
 
-        # SULYGIUOTA VIENOJE LINIJOJE, VIENAME CIKLE
+        # VIENOJE LINIJOJE VISKAS
         cols = st.columns(col_widths)
         cols[0].write(str(k[5])[:7])           # Vilkikas (max 7)
         cols[1].write(str(k[3]))               # Pakr. data
@@ -153,9 +153,8 @@ def show(conn, c):
         bdl_in = cols[9].text_input("", value=str(bdl), key=f"bdl_{k[0]}", label_visibility="collapsed", placeholder="")
         ldl_in = cols[10].text_input("", value=str(ldl), key=f"ldl_{k[0]}", label_visibility="collapsed", placeholder="")
 
-        # Pakrovimo update Data, Laikas, Statusas
+        # Pakrovimo update Data, Laikas, Statusas, ŽYMA ŠALIA
         pk_disabled = pk_status == "Pakrauta"
-        pk_bg = status_bg_color(pk_status, pakrovimas=True)
         pk_data_in = cols[11].date_input("", value=pk_data, key=f"pkdata_{k[0]}", disabled=pk_disabled)
         pk_laikas_in = cols[12].selectbox("", time_options, index=time_options.index(pk_laikas) if pk_laikas in time_options else 32, key=f"pktime_{k[0]}", disabled=pk_disabled)
         pk_status_in = cols[13].selectbox(
@@ -163,20 +162,11 @@ def show(conn, c):
             index=["-", "Atvyko", "Pakrauta", "Kita"].index(pk_status if pk_status in ["-", "Atvyko", "Pakrauta", "Kita"] else 0),
             key=f"pkstatus_{k[0]}", label_visibility="collapsed"
         )
-        # FONAS statusui
-        cols[13].markdown(
-            f"""<style>
-            div[data-testid='stVerticalBlock'] > div:nth-child(1) > div[role='listbox'] {{
-                background-color: {pk_bg} !important;
-                border-radius: 4px;
-            }}
-            </style>""",
-            unsafe_allow_html=True
-        )
+        # SPALVOTA ŽYMA ŠALIA STATUSO
+        cols[13].markdown(status_dot(pk_status_in, pakrovimas=True), unsafe_allow_html=True)
 
-        # Iškrovimo update Data, Laikas, Statusas
+        # Iškrovimo update Data, Laikas, Statusas, ŽYMA ŠALIA
         ikr_disabled = ikr_status == "Iškrauta"
-        ikr_bg = status_bg_color(ikr_status, pakrovimas=False)
         ikr_data_in = cols[14].date_input("", value=ikr_data, key=f"ikrdata_{k[0]}", disabled=ikr_disabled)
         ikr_laikas_in = cols[15].selectbox("", time_options, index=time_options.index(ikr_laikas) if ikr_laikas in time_options else 32, key=f"iktime_{k[0]}", disabled=ikr_disabled)
         ikr_status_in = cols[16].selectbox(
@@ -184,15 +174,7 @@ def show(conn, c):
             index=["-", "Atvyko", "Iškrauta", "Kita"].index(ikr_status if ikr_status in ["-", "Atvyko", "Iškrauta", "Kita"] else 0),
             key=f"ikrstatus_{k[0]}", label_visibility="collapsed"
         )
-        cols[16].markdown(
-            f"""<style>
-            div[data-testid='stVerticalBlock'] > div:nth-child(1) > div[role='listbox'] {{
-                background-color: {ikr_bg} !important;
-                border-radius: 4px;
-            }}
-            </style>""",
-            unsafe_allow_html=True
-        )
+        cols[16].markdown(status_dot(ikr_status_in, pakrovimas=False), unsafe_allow_html=True)
 
         komentaras_in = cols[17].text_input("", value=komentaras, key=f"komentaras_{k[0]}", label_visibility="collapsed", placeholder="Komentaras")
 

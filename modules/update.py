@@ -3,19 +3,17 @@ import pandas as pd
 from datetime import datetime, timedelta, time, date
 
 def generate_time_choices(base_date, label='Pakrovimo'):
-    """Sugeneruoja time pasirinkimus su data ir papildomais statusais."""
-    # Pagrindinis sąrašas (pvz., 00:00 iki 23:45 kas 15 min)
     times = []
     base_date = pd.to_datetime(base_date).date()
     for h in range(0, 24):
         for m in range(0, 60, 15):
             dt = datetime.combine(base_date, time(h, m))
             times.append(dt.strftime("%Y-%m-%d %H:%M"))
-    # Papildomi statusai
+    # Papildomi statusai ir pasirinkimas
     if label == 'Pakrovimo':
-        extra = ["Atvyko", "Pakrauta", "Kita"]
+        extra = ["Atvyko", "Pakrauta", "Kita", "Kita data..."]
     else:
-        extra = ["Atvyko", "Iškrauta", "Kita"]
+        extra = ["Atvyko", "Iškrauta", "Kita", "Kita data..."]
     return times + extra
 
 def show(conn, c):
@@ -87,7 +85,7 @@ def show(conn, c):
         "Priekaba", "Km", "Darbo laikas", "Likes darbo laikas", "Savaitinė atstova",
         "Pakrovimo update", "Iškrovimo update", "Komentaras", "Atnaujinta:", "Save"
     ]
-    col_widths = [1,1,1,1.1,1,1,0.9,0.7,0.8,0.8,0.8,1.7,1.7,1.5,1.2,0.8]
+    col_widths = [1,1,1,1.1,1,1,0.9,0.7,0.8,0.8,0.8,2,2,1.5,1.2,0.8]
     cols = st.columns(col_widths)
     for i, label in enumerate(headers):
         cols[i].markdown(f"<b>{label}</b>", unsafe_allow_html=True)
@@ -139,19 +137,52 @@ def show(conn, c):
         likes_in = cols[9].number_input("", value=likes_laikas, key=f"ldl_{k[0]}", label_visibility="collapsed")
         savaite_in = cols[10].text_input("", value=savaite_atstova, key=f"sav_{k[0]}", label_visibility="collapsed")
 
-        # Pakrovimo update (VIENAS DROPLISTAS)
+        # Pakrovimo update (vienas droplistas su papildomais inputais jei reikia)
         pk_choices = generate_time_choices(k[3], label='Pakrovimo')
-        pk_index = pk_choices.index(pakrovimo_update) if pakrovimo_update in pk_choices else 32
-        pk_selected = cols[11].selectbox(
+        if pakrovimo_update in pk_choices:
+            pk_index = pk_choices.index(pakrovimo_update)
+            pk_selected = pk_choices[pk_index]
+        else:
+            pk_index = len(pk_choices)-1 # "Kita data..."
+            pk_selected = pk_choices[pk_index]
+        pk_value = cols[11].selectbox(
             "", pk_choices, index=pk_index, key=f"pkupdate_{k[0]}"
         )
+        # Jeigu pasirinkta "Kita data...", atsidaro papildomi inputai
+        if pk_value == "Kita data...":
+            pk_data_manual = cols[11].date_input(
+                "Data", pd.to_datetime(k[3]).date(), key=f"pkdata_{k[0]}"
+            )
+            pk_time_list = [f"{h:02}:{m:02}" for h in range(24) for m in range(0,60,15)]
+            pk_time_manual = cols[11].selectbox(
+                "Laikas", pk_time_list, key=f"pktime_{k[0]}"
+            )
+            pakrovimo_update_final = f"{pk_data_manual} {pk_time_manual}"
+        else:
+            pakrovimo_update_final = pk_value
 
-        # Iškrovimo update (VIENAS DROPLISTAS)
+        # Iškrovimo update (vienas droplistas su papildomais inputais jei reikia)
         ikr_choices = generate_time_choices(k[4], label='Iškrovimo')
-        ikr_index = ikr_choices.index(iskrovimo_update) if iskrovimo_update in ikr_choices else 32
-        ikr_selected = cols[12].selectbox(
+        if iskrovimo_update in ikr_choices:
+            ikr_index = ikr_choices.index(iskrovimo_update)
+            ikr_selected = ikr_choices[ikr_index]
+        else:
+            ikr_index = len(ikr_choices)-1 # "Kita data..."
+            ikr_selected = ikr_choices[ikr_index]
+        ikr_value = cols[12].selectbox(
             "", ikr_choices, index=ikr_index, key=f"ikrupdate_{k[0]}"
         )
+        if ikr_value == "Kita data...":
+            ikr_data_manual = cols[12].date_input(
+                "Data", pd.to_datetime(k[4]).date(), key=f"ikrdata_{k[0]}"
+            )
+            ikr_time_list = [f"{h:02}:{m:02}" for h in range(24) for m in range(0,60,15)]
+            ikr_time_manual = cols[12].selectbox(
+                "Laikas", ikr_time_list, key=f"iktime_{k[0]}"
+            )
+            iskrovimo_update_final = f"{ikr_data_manual} {ikr_time_manual}"
+        else:
+            iskrovimo_update_final = ikr_value
 
         # Komentaras
         komentaras_in = cols[13].text_input(
@@ -183,7 +214,7 @@ def show(conn, c):
                     WHERE id=?
                 """, (
                     darbo_in, likes_in, savaite_in, now_str,
-                    pk_selected, ikr_selected, komentaras_in, jau_irasas[0]
+                    pakrovimo_update_final, iskrovimo_update_final, komentaras_in, jau_irasas[0]
                 ))
             else:
                 c.execute("""
@@ -193,7 +224,7 @@ def show(conn, c):
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     k[5], k[3], darbo_in, likes_in, savaite_in, now_str,
-                    pk_selected, ikr_selected, komentaras_in
+                    pakrovimo_update_final, iskrovimo_update_final, komentaras_in
                 ))
             conn.commit()
             st.success("✅ Išsaugota!")

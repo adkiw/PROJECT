@@ -16,7 +16,7 @@ def show(conn, c):
         .stDataFrame div[role="columnheader"] {
             white-space: nowrap;
         }
-        /* Pašaliname varnelę (checkmark) selectbox pasirinkimuose */
+        /* Pašaliname varnelės (checkmark) ikonėlę selectbox pasirinkimuose */
         div[role="option"] svg { display: none !important; }
         </style>
     """, unsafe_allow_html=True)
@@ -89,7 +89,7 @@ def show(conn, c):
         st.info("Nėra būsimų krovinių šiems vilkikams pagal nurodytą filtrą.")
         return
 
-    # 5) Definuojame stulpelių pločius ir antraštes atnaujintoje tvarkoje
+    # 5) Definuojame stulpelių pločius ir antraštes nauja tvarka (įtraukiame "Iškr. vieta")
     col_widths = [
         0.51, 0.85, 0.42, 0.7, 0.7, 1,
         0.7, 0.7, 0.7, 0.42, 0.4,
@@ -178,21 +178,21 @@ def show(conn, c):
         prefix_pk = k[11] if k[11] else ""
         region_pk = k[12] if k[12] else ""
         vieta_pk = f"{prefix_pk}{region_pk}"
-        cols[5].write(vieta_pk[:18])  # Pakrovimo vieta (0–18 simbolių)
+        cols[5].write(vieta_pk[:18])  # Pakrovimo vieta (nepjaunama viduryje žodžio)
 
-        cols[6].write(str(k[4]))  # Iškr. data originali
+        cols[6].write(str(k[4]))  # Iškrovimo data originali
         cols[7].write(
             str(k[9])[:5] + (f" - {str(k[10])[:5]}" if k[10] else "")
-        )  # Iškr. laikas
+        )  # Iškrovimo laikas
 
-        # Iškr. vieta – susideda iš šalies prefikso + regionas
+        # Iškrovimo vieta – susideda iš šalies prefikso + regionas
         prefix_is = k[13] if k[13] else ""
         region_is = k[14] if k[14] else ""
         vieta_is = f"{prefix_is}{region_is}"
-        cols[8].write(vieta_is[:18])  # Iškr. vieta
+        cols[8].write(vieta_is[:18])  # Iškr. vieta (nepjaunama viduryje žodžio)
 
-        cols[9].write(str(k[6])[:6])  # Priekaba
-        cols[10].write(str(k[15]))    # Km
+        cols[9].write(str(k[6])[:6])   # Priekaba
+        cols[10].write(str(k[15]))     # Km
 
         # SA, BDL, LDL
         sa_in = cols[11].text_input(
@@ -239,7 +239,7 @@ def show(conn, c):
             key=f"pk_status_{k[0]}", label_visibility="collapsed"
         )
 
-        # Iškr. data – date_input
+        # Iškrovimo data – date_input
         try:
             default_ikr_date = datetime.fromisoformat(ikr_data).date()
         except:
@@ -249,7 +249,7 @@ def show(conn, c):
             "", value=default_ikr_date, key=ikr_data_key, label_visibility="collapsed"
         )
 
-        # Iškr. laikas – tekstinis įvedimas su formato logika
+        # Iškrovimo laikas – tekstinis įvedimas su formato logika
         ikr_time_key = f"ikr_time_{k[0]}"
         if ikr_laikas:
             formatted_ikr = format_time_str(ikr_laikas)
@@ -262,7 +262,7 @@ def show(conn, c):
             )
         )
 
-        # Iškr. statusas – selectbox su pradine tuščia reikšme, be varnelės
+        # Iškrovimo statusas – selectbox su pradine tuščia reikšme, be varnelės
         ikr_status_options = [""] + ["Atvyko", "Iškrauta", "Kita"]
         if ikr_status in ikr_status_options:
             default_ikr_status_idx = ikr_status_options.index(ikr_status)

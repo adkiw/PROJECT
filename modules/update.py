@@ -6,13 +6,8 @@ ATVYKIMO_VARIANTAI_P = ["Problema", "Atvyko", "Pakrautas"]
 ATVYKIMO_VARIANTAI_I = ["Problema", "Atvyko", "Iškrautas"]
 
 def atvykimo_combo_input(label, val, variants, key):
-    """
-    Vienas inputas: laikas (arba tuščias) ir dropdownas
-    Pvz.: '08:20 Pakrautas'
-    """
     col1, col2 = st.columns([2,2])
     time_part, status_part = "", ""
-    # Jei val jau toks: 08:20 Pakrautas
     if val:
         parts = val.split(" ", 1)
         if len(parts) == 2:
@@ -34,44 +29,26 @@ def atvykimo_combo_input(label, val, variants, key):
 def show(conn, c):
     st.title("DISPO – Vilkikų ir krovinių atnaujinimas (Update)")
 
-    vadybininkai = [r[0] for r in c.execute(
-        "SELECT DISTINCT vadybininkas FROM vilkikai WHERE vadybininkas IS NOT NULL AND vadybininkas != ''"
-    ).fetchall()]
-
-    if not vadybininkai:
-        st.warning("Nėra nė vieno transporto vadybininko su priskirtais vilkikais.")
-        return
-
-    vadyb = st.selectbox("Pasirink transporto vadybininką", vadybininkai)
-    if not vadyb: return
-
-    vilkikai = [r[0] for r in c.execute("SELECT numeris FROM vilkikai WHERE vadybininkas = ?", (vadyb,)).fetchall()]
-    if not vilkikai:
-        st.info("Nėra vilkikų šiam vadybininkui.")
-        return
+    # Panaikinta vadybininkų logika, nes lentelėje 'kroviniai' nėra vadybininko/vilkiko laukų
 
     today = datetime.now().date()
-    placeholders = ','.join('?' for _ in vilkikai)
-    kroviniai = c.execute(f"""
-        SELECT kroviniai.id, kroviniai.vilkikas, kroviniai.pakrovimo_data, kroviniai.pakrovimo_laikas_nuo, kroviniai.pakrovimo_laikas_iki,
-               kroviniai.pakrovimo_regionas, kroviniai.pakrovimo_salis, kroviniai.iskrovimo_data, kroviniai.iskrovimo_laikas_nuo, kroviniai.iskrovimo_laikas_iki,
-               kroviniai.iskrovimo_regionas, kroviniai.iskrovimo_salis, kroviniai.km, kroviniai.priekaba
+
+    kroviniai = c.execute("""
+        SELECT id, klientas, uzsakymo_numeris, pakrovimo_data, iskrovimo_data, kilometrai, frachtas, busena
         FROM kroviniai
-        WHERE kroviniai.vilkikas IN ({placeholders}) AND kroviniai.pakrovimo_data >= ?
-        ORDER BY kroviniai.vilkikas, kroviniai.pakrovimo_data
-    """, (*vilkikai, str(today))).fetchall()
+        WHERE pakrovimo_data >= ?
+        ORDER BY pakrovimo_data
+    """, (str(today),)).fetchall()
 
     if not kroviniai:
-        st.info("Nėra būsimų krovinių šiems vilkikams.")
+        st.info("Nėra būsimų krovinių.")
         return
 
     st.markdown("---")
 
-    # Headeris
     header = [
-        "Vilkikas", "Pakr. data", "Pakr. laikas", "Atvykimas į pakrovimą",
-        "Pakrovimo vieta", "Iškr. data", "Iškr. laikas", "Atvykimas į iškrovimą",
-        "Km", "Priekaba", "Savaitinė atstovė", "Veiksmas"
+        "Klientas", "Užsakymo nr.", "Pakrovimo data", "Iškrovimo data",
+        "Kilometrai", "Frachtas (€)", "Būsena", "Veiksmas"
     ]
     st.markdown(
         "<style>.rowcell{vertical-align:middle !important;}</style>",
@@ -81,71 +58,25 @@ def show(conn, c):
     for i, h in enumerate(header):
         colobj[i].markdown(f"**{h}**")
 
-    # Kiekvienas krovinys
     for k in kroviniai:
         (
-            krovid, vilkikas, pk_data, pk_nuo, pk_iki, pk_reg, pk_sal,
-            is_data, is_nuo, is_iki, is_reg, is_sal, km, priekaba
+            krovid, klientas, uzs_nr, pk_data, is_data, km, fr, busena
         ) = k
 
-        # Pakrovimo/iškr. laiko formatas
-        pk_laikas = (pk_nuo or "") + (" - " if pk_nuo and pk_iki else "") + (pk_iki or "")
-        is_laikas = (is_nuo or "") + (" - " if is_nuo and is_iki else "") + (is_iki or "")
-
-        pk_vieta = f"{(pk_sal or '')}{(pk_reg or '')}"
-        is_vieta = f"{(is_sal or '')}{(is_reg or '')}"
-
-        # Gaunam paskutinį įrašą, saugu
-        darbo = c.execute("""
-            SELECT darbo_laikas, likes_laikas, atvykimo_pakrovimas, atvykimo_iskrovimas, savaite_atstove
-            FROM vilkiku_darbo_laikai
-            WHERE krovinys_id = ?
-            ORDER BY id DESC LIMIT 1
-        """, (krovid,)).fetchone()
-        darbo_laikas, likes_laikas, atv_pakrovimas, atv_iskrovimas, savaite_atstove = darbo if darbo else ("", "", "", "", "")
-
-        # In-row inputai
         cols = st.columns(len(header))
-
-        cols[0].write(vilkikas)
-        cols[1].write(pk_data)
-        cols[2].write(pk_laikas)
-        # Atvykimas į pakrovimą
-        atvyk_p = atvykimo_combo_input("", atv_pakrovimas, ATVYKIMO_VARIANTAI_P, f"pk_{krovid}")
-        cols[3].write("")  # vietoj įvesties – padding
-        cols[3].markdown(
-            f"<div style='display:flex; align-items:center;justify-content:center'>{atvyk_p}</div>",
-            unsafe_allow_html=True
+        cols[0].write(klientas)
+        cols[1].write(uzs_nr)
+        cols[2].write(pk_data)
+        cols[3].write(is_data)
+        cols[4].write(km)
+        cols[5].write(fr)
+        nauja_busena = cols[6].selectbox(
+            "", ["suplanuotas", "nesuplanuotas", "pakrautas", "iškrautas"], 
+            index=(["suplanuotas", "nesuplanuotas", "pakrautas", "iškrautas"].index(busena) if busena in ["suplanuotas", "nesuplanuotas", "pakrautas", "iškrautas"] else 0),
+            key=f"bus_{krovid}"
         )
-        cols[4].write(pk_vieta)
-        cols[5].write(is_data)
-        cols[6].write(is_laikas)
-        # Atvykimas į iškrovimą
-        atvyk_i = atvykimo_combo_input("", atv_iskrovimas, ATVYKIMO_VARIANTAI_I, f"isk_{krovid}")
-        cols[7].write("")
-        cols[7].markdown(
-            f"<div style='display:flex; align-items:center;justify-content:center'>{atvyk_i}</div>",
-            unsafe_allow_html=True
-        )
-        cols[8].write(km)
-        cols[9].write(priekaba)
-        savaite_new = cols[10].text_input("", value=savaite_atstove, key=f"sav_{krovid}", label_visibility="collapsed")
-        if cols[11].button("💾", key=f"saugoti_{krovid}"):
-            # Update/insert
-            jau_irasas = c.execute(
-                "SELECT id FROM vilkiku_darbo_laikai WHERE krovinys_id = ?", (krovid,)
-            ).fetchone()
-            if jau_irasas:
-                c.execute("""
-                    UPDATE vilkiku_darbo_laikai
-                    SET darbo_laikas=?, likes_laikas=?, atvykimo_pakrovimas=?, atvykimo_iskrovimas=?, savaite_atstove=?
-                    WHERE id=?
-                """, (darbo_laikas, likes_laikas, atvyk_p, atvyk_i, savaite_new, jau_irasas[0]))
-            else:
-                c.execute("""
-                    INSERT INTO vilkiku_darbo_laikai
-                    (krovinys_id, darbo_laikas, likes_laikas, atvykimo_pakrovimas, atvykimo_iskrovimas, savaite_atstove)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, (krovid, darbo_laikas, likes_laikas, atvyk_p, atvyk_i, savaite_new))
+        if cols[7].button("💾", key=f"saug_{krovid}"):
+            c.execute("UPDATE kroviniai SET busena = ? WHERE id = ?", (nauja_busena, krovid))
             conn.commit()
-            st.success("✅ Išsaugota!")
+            st.success("✅ Atnaujinta.")
+

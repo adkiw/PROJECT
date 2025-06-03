@@ -5,8 +5,14 @@ from datetime import datetime, timedelta
 def show(conn, c):
     st.title("DISPO – Vilkikų ir krovinių atnaujinimas (Update)")
 
+    # --- CSS raudonam fonui ---
+    st.markdown("""
+        <style>
+        .cell-alert input {background-color:#ffeaea !important;}
+        </style>
+    """, unsafe_allow_html=True)
+
     # Užtikrinam papildomus laukus
-    # Paleisk pirmą kartą ir po to gali ištrinti šį bloką
     existing = [r[1] for r in c.execute("PRAGMA table_info(vilkiku_darbo_laikai)").fetchall()]
     if "savaitine_atstova" not in existing:
         c.execute("ALTER TABLE vilkiku_darbo_laikai ADD COLUMN savaitine_atstova TEXT")
@@ -46,46 +52,27 @@ def show(conn, c):
         st.info("Nėra būsimų krovinių šiems vilkikams.")
         return
 
-    # Surūšiuojam pagal vilkiko nr ir datas
     kroviniai = sorted(
         kroviniai,
         key=lambda k: (str(k[5]), pd.to_datetime(k[3]), pd.to_datetime(k[4]))
     )
 
-    # Header
-    st.markdown("""
-    <style>
-    .cell-alert input { background-color: #ffeaea !important; }
-    </style>
-    """, unsafe_allow_html=True)
-    st.write("**Savaitinė atstovė:**")
-    atstove = st.text_input("Įvesk savaitinę atstovę", key="savaitine_atstova_bendra")
-    st.write("")
+    atstove = st.text_input("Savaitinė atstovė (bus pritaikyta naujam įrašui, jei laukas tuščias)", key="savaitine_atstova_bendra")
 
-    st.markdown("""
-    <div style='overflow-x:auto'>
-    <table style='width:100%;border-collapse:collapse'>
-        <tr style='background:#f8f8f8'>
-            <th>Vilkikas</th>
-            <th>Pakr. data</th>
-            <th>Pakr. laikas</th>
-            <th>Pakrovimo vieta</th>
-            <th>Iškr. data</th>
-            <th>Iškr. laikas</th>
-            <th>Iškr. vieta</th>
-            <th>Km</th>
-            <th>Priekaba</th>
-            <th>Darbo laikas</th>
-            <th>Likes darbo laikas</th>
-            <th>Atv. į pakrovimą</th>
-            <th>Atv. į iškrovimą</th>
-            <th>Savaitinė atstova</th>
-            <th>Veiksmas</th>
-        </tr>
-    """, unsafe_allow_html=True)
+    # Header:
+    col_names = [
+        "Vilkikas", "Pakr. data", "Pakr. laikas", "Pakrovimo vieta",
+        "Iškr. data", "Iškr. laikas", "Iškr. vieta", "Km", "Priekaba",
+        "Darbo laikas", "Likes darbo laikas", "Atv. į pakrovimą", "Atv. į iškrovimą",
+        "Savaitinė atstovė", "Veiksmas"
+    ]
+    st.markdown(
+        "<div style='overflow-x:auto'><table style='width:100%;border-collapse:collapse'><tr>" +
+        "".join([f"<th>{x}</th>" for x in col_names]) +
+        "</tr></table></div>", unsafe_allow_html=True
+    )
 
     for k in kroviniai:
-        # Gaunam paskutinį įrašą
         darbo = c.execute("""
             SELECT darbo_laikas, likes_laikas, atvykimo_pakrovimas, atvykimo_iskrovimas, savaitine_atstova, created_at
             FROM vilkiku_darbo_laikai
@@ -100,7 +87,6 @@ def show(conn, c):
         savaite_atstova = darbo[4] if darbo and darbo[4] else atstove
         created = darbo[5] if darbo and darbo[5] else None
 
-        # Tikrinam ar >1min nuo paskutinio įrašo
         cell_alert = {}
         if created:
             try:
@@ -131,7 +117,6 @@ def show(conn, c):
             save = cols[14].form_submit_button("💾")
 
             if save:
-                # Ar yra jau įrašas? Jei yra - UPDATE, jei ne - INSERT
                 jau_irasas = c.execute("""
                     SELECT id FROM vilkiku_darbo_laikai WHERE vilkiko_numeris = ? AND data = ?
                 """, (k[5], k[3])).fetchone()
@@ -150,5 +135,3 @@ def show(conn, c):
                     """, (k[5], k[3], darbo_in, likes_in, pakr_in, iskr_in, savaite_in, now_str))
                 conn.commit()
                 st.success("✅ Išsaugota!")
-
-    st.markdown("</table></div>", unsafe_allow_html=True)

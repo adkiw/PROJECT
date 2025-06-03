@@ -10,17 +10,10 @@ def show(conn, c):
         .stTextInput>div>div>input {font-size:12px !important; min-height:2em;}
         .block-container { padding-top: 0.5rem !important;}
         /* Leidžiame horizontalią slinktį, kai stulpeliai netelpa */
-        .streamlit-expanderHeader {
-            overflow-x: auto;
-        }
-        .stDataFrame div[role="columnheader"] {
-            white-space: nowrap;
-        }
+        .streamlit-expanderHeader { overflow-x: auto; }
+        .stDataFrame div[role="columnheader"] { white-space: nowrap; }
         /* Pašaliname varnelę ir rodyklę selectbox pasirinkimuose */
-        div[role="option"] svg,
-        div[role="combobox"] svg {
-            display: none !important;
-        }
+        div[role="option"] svg, div[role="combobox"] svg { display: none !important; }
         </style>
     """, unsafe_allow_html=True)
 
@@ -97,11 +90,11 @@ def show(conn, c):
         0.5,   # Save
         0.85,  # Atnaujinta:
         0.4,   # Vilkikas
-        0.7,   # Pakr. data
-        0.7,   # Pakr. laikas
+        0.7,   # Pakr. data (originali)
+        0.7,   # Pakr. laikas (originalus)
         1.0,   # Pakrovimo vieta
-        0.7,   # Iškr. data
-        0.7,   # Iškr. laikas
+        0.7,   # Iškr. data (originali)
+        0.7,   # Iškr. laikas (originalus)
         1.0,   # Iškr. vieta
         0.6,   # Priekaba
         0.4,   # Km
@@ -158,13 +151,13 @@ def show(conn, c):
 
         # Ištraukime reikšmes, jei įrašas yra
         sa = darbo[0] if darbo and darbo[0] else ""
-        bdl = darbo[1] if darbo and darbo[1] not in [None, ""] else ""     # <-- pataisyta eilutė
+        bdl = darbo[1] if darbo and darbo[1] not in [None, ""] else ""
         ldl = darbo[2] if darbo and darbo[2] not in [None, ""] else ""
         created = darbo[3] if darbo and darbo[3] else None
 
         pk_status = darbo[4] if darbo and darbo[4] else ""
         pk_laikas = darbo[5] if darbo and darbo[5] else (str(k[7])[:5] if k[7] else "")
-        pk_data = darbo[6] if darbo and darbo[6] else str(k[3])
+        pk_data = darba[6] if darbo and darbo[6] else str(k[3])
 
         ikr_status = darbo[7] if darbo and darbo[7] else ""
         ikr_laikas = darbo[8] if darbo and darbo[8] else (str(k[9])[:5] if k[9] else "")
@@ -195,7 +188,7 @@ def show(conn, c):
         row_cols[4].write(
             str(k[7])[:5] + (f" - {str(k[8])[:5]}" if k[8] else "")
         )  # Pakrovimo laikas (originalus)
-        # Pakrovimo vieta = šalies prefiksas + regionas
+        # Pakrovimo vieta = šalies prefikso + regionas
         prefix_pk = k[11] if k[11] else ""
         region_pk = k[12] if k[12] else ""
         vieta_pk = f"{prefix_pk}{region_pk}"
@@ -205,7 +198,7 @@ def show(conn, c):
         row_cols[7].write(
             str(k[9])[:5] + (f" - {str(k[10])[:5]}" if k[10] else "")
         )  # Iškr. laikas (originalus)
-        # Iškr. vieta = šalies prefiksas + regionas
+        # Iškr. vieta = šalies prefikso + regionas
         prefix_is = k[13] if k[13] else ""
         region_is = k[14] if k[14] else ""
         vieta_is = f"{prefix_is}{region_is}"
@@ -299,21 +292,23 @@ def show(conn, c):
         )
 
         # 11) Atsakingi vadybininkai – tik rodoma, nepasirenkama
-        #    a) Transporto vadybininkas pagal vilkiką
+        # a) Transporto vadybininkas pagal vilkiką
         transp_res = c.execute(
             "SELECT vadybininkas FROM vilkikai WHERE numeris = ?", (k[5],)
         ).fetchone()
         transp_vad = transp_res[0] if transp_res else ""
         row_cols[21].text_input(
-            "", value=transp_vad, disabled=True, label_visibility="collapsed"
+            "", value=transp_vad, disabled=True, label_visibility="collapsed",
+            key=f"trans_vad_{k[0]}"
         )
-        #    b) Ekspedicijos vadybininkas iš kroviniai modulio
+        # b) Ekspedicijos vadybininkas iš kroviniai modulio
         eksp_res = c.execute(
             "SELECT ekspedicijos_vadybininkas FROM kroviniai WHERE id = ?", (k[0],)
         ).fetchone()
         eksp_vad = eksp_res[0] if eksp_res else ""
         row_cols[22].text_input(
-            "", value=eksp_vad, disabled=True, label_visibility="collapsed"
+            "", value=eksp_vad, disabled=True, label_visibility="collapsed",
+            key=f"eksp_vad_{k[0]}"
         )
 
         # 12) Išsaugojimo logika

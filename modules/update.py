@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, time
+from datetime import datetime
 
 def generate_time_list(step_minutes=15):
     return [f"{h:02}:{m:02}" for h in range(24) for m in range(0, 60, step_minutes)]
@@ -74,7 +74,7 @@ def show(conn, c):
         "Priekaba", "Km", "BDL", "LDL", "SA", 
         "Pakrovimo update", "Iškrovimo update", "Komentaras", "Atnaujinta:", "Save"
     ]
-    col_widths = [1,1,1,1.1,1,1,0.8,0.6,0.6,0.6,0.7,2.3,2.3,1.3,1.1,0.7]
+    col_widths = [1,1,1,1.1,1,1,0.9,0.8,0.6,0.6,0.7,2.3,2.3,1.3,1.1,0.7]
     cols = st.columns(col_widths)
     for i, label in enumerate(headers):
         cols[i].markdown(f"<b>{label}</b>", unsafe_allow_html=True)
@@ -91,8 +91,8 @@ def show(conn, c):
             WHERE vilkiko_numeris = ? AND data = ?
             ORDER BY id DESC LIMIT 1
         """, (k[5], k[3])).fetchone()
-        bdl = darbo[0] if darbo else 0.0
-        ldl = darbo[1] if darbo else 0.0
+        bdl = float(darbo[0]) if darbo and darbo[0] is not None else 0.0
+        ldl = float(darbo[1]) if darbo and darbo[1] is not None else 0.0
         sa = darbo[2] if darbo and darbo[2] else "24"
         created = darbo[3] if darbo and darbo[3] else None
 
@@ -110,22 +110,21 @@ def show(conn, c):
         ikr_laiko_label = f"{str(k[9])[:5]} - {str(k[10])[:5]}" if k[9] and k[10] else (str(k[9])[:5] if k[9] else (str(k[10])[:5] if k[10] else ""))
 
         cols = st.columns(col_widths)
-        cols[0].write(k[5])                    # Vilkikas
-        cols[1].write(str(k[3]))               # Pakr. data
-        cols[2].write(pk_laiko_label)          # Pakr. laikas
+        cols[0].write(str(k[5]))                    # Vilkikas
+        cols[1].write(str(k[3]))                    # Pakr. data
+        cols[2].write(pk_laiko_label)               # Pakr. laikas
         pakrovimo_vieta = f"{k[11]}{k[12]}"
-        cols[3].write(pakrovimo_vieta)         # Pakrovimo vieta
-        cols[4].write(str(k[4]))               # Iškr. data
-        cols[5].write(ikr_laiko_label)         # Iškr. laikas
-        cols[6].write(k[6])                    # Priekaba
-        cols[7].write(str(k[15]))              # Km
+        cols[3].write(str(pakrovimo_vieta))         # Pakrovimo vieta
+        cols[4].write(str(k[4]))                    # Iškr. data
+        cols[5].write(ikr_laiko_label)              # Iškr. laikas
+        cols[6].write(str(k[6]))                    # Priekaba (VISADA kaip tekstas)
+        cols[7].write(str(k[15]))                   # Km        (VISADA kaip tekstas)
 
-        # Svarbiausia dalis: float(bdl) ir float(ldl)
         bdl_in = cols[8].number_input(
-            "", value=float(bdl) if bdl is not None else 0.0, key=f"bdl_{k[0]}", label_visibility="collapsed", step=0.1
+            "", value=float(bdl), key=f"bdl_{k[0]}", label_visibility="collapsed", step=0.1
         )
         ldl_in = cols[9].number_input(
-            "", value=float(ldl) if ldl is not None else 0.0, key=f"ldl_{k[0]}", label_visibility="collapsed", step=0.1
+            "", value=float(ldl), key=f"ldl_{k[0]}", label_visibility="collapsed", step=0.1
         )
         sa_in = cols[10].selectbox(
             "", ["24", "45"], index=["24", "45"].index(sa) if sa in ["24", "45"] else 0, key=f"sa_{k[0]}", label_visibility="collapsed"
@@ -168,7 +167,7 @@ def show(conn, c):
                         komentaras=?
                     WHERE id=?
                 """, (
-                    bdl_in, ldl_in, sa_in, now_str,
+                    float(bdl_in), float(ldl_in), sa_in, now_str,
                     pk_status_in, pk_laikas_in, str(pk_data_in),
                     ikr_status_in, ikr_laikas_in, str(ikr_data_in),
                     komentaras_in, jau_irasas[0]
@@ -181,7 +180,7 @@ def show(conn, c):
                      iskrovimo_statusas, iskrovimo_laikas, iskrovimo_data, komentaras)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    k[5], k[3], bdl_in, ldl_in, sa_in, now_str,
+                    k[5], k[3], float(bdl_in), float(ldl_in), sa_in, now_str,
                     pk_status_in, pk_laikas_in, str(pk_data_in),
                     ikr_status_in, ikr_laikas_in, str(ikr_data_in),
                     komentaras_in

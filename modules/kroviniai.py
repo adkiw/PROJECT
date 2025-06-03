@@ -51,6 +51,38 @@ FIELD_ORDER = [
     "atsakingas_vadybininkas", "svoris", "paleciu_skaicius"
 ]
 
+def get_busena(c, krovinys):
+    # Jeigu vilkikas tuščias
+    if not krovinys.get("vilkikas"):
+        return "Nesuplanuotas"
+    if krovinys.get("vilkikas") == "":
+        return "Nesuplanuotas"
+    busena = "Suplanuotas"
+    # Surandam naujausią darbo laikų įrašą pagal vilkiką ir pakrovimo datą
+    r = c.execute("""
+        SELECT pakrovimo_statusas, iskrovimo_statusas
+        FROM vilkiku_darbo_laikai
+        WHERE vilkiko_numeris = ? AND data = ?
+        ORDER BY id DESC LIMIT 1
+    """, (krovinys['vilkikas'], krovinys['pakrovimo_data'])).fetchone()
+    if not r:
+        return busena
+    pk_status, ik_status = r
+    # Prioritetas
+    if ik_status == "Iškrauta":
+        return "Iškrauta"
+    if ik_status == "Atvyko":
+        return "Atvyko į iškrovimą"
+    if ik_status == "Kita" and pk_status != "Pakrauta":
+        return "Kita (iškrovimas)"
+    if pk_status == "Pakrauta":
+        return "Pakrauta"
+    if pk_status == "Atvyko":
+        return "Atvyko į pakrovimą"
+    if pk_status == "Kita":
+        return "Kita (pakrovimas)"
+    return busena
+
 def show(conn, c):
     st.title("Užsakymų valdymas")
     add_clicked = st.button("➕ Pridėti naują krovinį", use_container_width=True)
@@ -69,10 +101,7 @@ def show(conn, c):
             c.execute(f"ALTER TABLE kroviniai ADD COLUMN {col} {typ}")
     conn.commit()
 
-    # ---- Duomenų pasirinkimai ----
     klientai = [r[0] for r in c.execute("SELECT pavadinimas FROM klientai").fetchall()]
-
-    # Jeigu nėra klientų
     if len(klientai) == 0:
         st.warning("Nėra nė vieno kliento! Pridėkite klientą modulyje **Klientai** ir grįžkite čia.")
         return
@@ -85,9 +114,6 @@ def show(conn, c):
     eksped_dropdown = [""] + eksped_vadybininkai
     vilkikai_df = pd.read_sql_query("SELECT numeris, vadybininkas FROM vilkikai", conn)
     vilk_vad_map = {r['numeris']: r['vadybininkas'] for _, r in vilkikai_df.iterrows()}
-    busena_opt = [r[0] for r in c.execute("SELECT reiksme FROM lookup WHERE kategorija = ?", ("busena",)).fetchall()]
-    if not busena_opt:
-        busena_opt = ["suplanuotas", "nesuplanuotas", "pakrautas", "iškrautas"]
     df_klientai = pd.read_sql_query("SELECT pavadinimas, likes_limitas FROM klientai", conn)
     klientu_limitai = {row['pavadinimas']: row['likes_limitas'] for _, row in df_klientai.iterrows()}
 
@@ -103,7 +129,7 @@ def show(conn, c):
     def edit_cargo(cid): st.session_state['selected_cargo'] = cid
     sel = st.session_state['selected_cargo']
 
-    # --- Sąrašas ---
+    # Sąrašas
     if sel is None:
         df = pd.read_sql_query("SELECT * FROM kroviniai", conn)
         if df.empty:
@@ -113,6 +139,13 @@ def show(conn, c):
             papildomi = [c for c in df.columns if c not in FIELD_ORDER]
             saraso_stulpeliai = FIELD_ORDER + papildomi
             df_disp = df[saraso_stulpeliai].fillna("")
+
+            # Nauja: busena skaičiuojama dinamiškai
+            busenos = []
+            for _, row in df_disp.iterrows():
+                busenos.append(get_busena(c, row))
+            df_disp["busena"] = busenos
+
             st.markdown("""
             <style>
             .st-emotion-cache-1avcm0n {min-width: 1850px;}
@@ -165,8 +198,6 @@ def show(conn, c):
         limito_likutis = klientu_limitai.get(klientas, "")
         if klientas: colA.info(f"Limito likutis: {limito_likutis}")
         uzsak = colA.text_input("Užsakymo nr.", value=("" if is_new else data.get('uzsakymo_numeris','')), key="kl_uzsak")
-        bus_idx = 0 if is_new or data.get('busena') not in busena_opt else busena_opt.index(data['busena'])
-        bus = colA.selectbox("Būsena", busena_opt, index=bus_idx, key="cr_busena")
         eksped_val = ("" if is_new else data.get('ekspedicijos_vadybininkas', ""))
         eksped_idx = eksped_dropdown.index(eksped_val) if eksped_val in eksped_dropdown else 0
         eksped_vad = colA.selectbox("Ekspedicijos vadybininkas", eksped_dropdown, index=eksped_idx, key="eksped_vad")
@@ -249,7 +280,7 @@ def show(conn, c):
                 'frachtas': frachtas_float,
                 'svoris': int(sv or 0),
                 'paleciu_skaicius': int(pal or 0),
-                'busena': bus
+                # 'busena' nebėra!
             }
             try:
                 if is_new:

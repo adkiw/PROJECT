@@ -1,9 +1,26 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, time
+from datetime import datetime, timedelta
 
 def generate_time_list(step_minutes=15):
     return [f"{h:02}:{m:02}" for h in range(24) for m in range(0, 60, step_minutes)]
+
+def get_status_bg(status, pakr=True):
+    if status == "Pakrauta" or (not pakr and status == "Iškrauta"):
+        return "background-color:#d4f7d4;"  # žalia
+    elif status == "Atvyko":
+        return "background-color:#d4eaff;"  # žydra
+    elif status == "Kita":
+        return "background-color:#ffebc6;"  # oranžinė
+    else:
+        return ""
+
+def get_atnaujinta_bg(created, iskrovimo_status):
+    if iskrovimo_status != "Iškrauta" and created:
+        created_dt = pd.to_datetime(created)
+        if datetime.now() - created_dt > timedelta(hours=3):
+            return "background-color:#ffd6d6;"  # raudonas fonas
+    return ""
 
 def show(conn, c):
     st.markdown("""
@@ -18,6 +35,7 @@ def show(conn, c):
 
     st.title("DISPO – Vilkikų ir krovinių atnaujinimas (Update)")
 
+    # DB laukų tikrinimas
     existing = [r[1] for r in c.execute("PRAGMA table_info(vilkiku_darbo_laikai)").fetchall()]
     extra_cols = [
         ("pakrovimo_statusas", "TEXT"),
@@ -73,9 +91,14 @@ def show(conn, c):
     headers = [
         "Vilkikas", "Pakr. data", "Pakr. laikas", "Pakrovimo vieta", "Iškr. data", "Iškr. laikas", 
         "Priekaba", "Km", "SA", "BDL", "LDL", 
-        "Pakrovimo update", "Iškrovimo update", "Komentaras", "Atnaujinta:", "Save"
+        "Pakrovimo update Data", "Pakrovimo update Laikas", "Pakrovimo update Statusas",
+        "Iškrovimo update Data", "Iškrovimo update Laikas", "Iškrovimo update Statusas",
+        "Komentaras", "Atnaujinta:", "Save"
     ]
-    col_widths = [0.65, 0.95, 0.97, 1, 0.95, 0.97, 0.62, 0.6, 0.5, 0.5, 0.5, 2.5, 2.5, 1.15, 0.98, 0.65]
+    col_widths = [
+        0.5, 0.8, 0.82, 0.82, 0.8, 0.82, 0.45, 0.45, 0.47, 0.48, 0.48,
+        1.15, 0.72, 0.95, 1.15, 0.72, 0.95, 1.15, 0.95, 0.5
+    ]
     cols = st.columns(col_widths)
     for i, label in enumerate(headers):
         cols[i].markdown(f"<b>{label}</b>", unsafe_allow_html=True)
@@ -110,50 +133,60 @@ def show(conn, c):
         pk_laiko_label = f"{str(k[7])[:5]} - {str(k[8])[:5]}" if k[7] and k[8] else (str(k[7])[:5] if k[7] else (str(k[8])[:5] if k[8] else ""))
         ikr_laiko_label = f"{str(k[9])[:5]} - {str(k[10])[:5]}" if k[9] and k[10] else (str(k[9])[:5] if k[9] else (str(k[10])[:5] if k[10] else ""))
 
+        # Tik viena columns eilutė visiems inputams, be with!
         cols = st.columns(col_widths)
-        cols[0].write(str(k[5])[:7])            # Vilkikas (max 7)
-        cols[1].write(str(k[3]))                # Pakr. data
-        cols[2].write(pk_laiko_label)           # Pakr. laikas
-        cols[3].write(str(k[11])[:18])          # Pakrovimo vieta
-        cols[4].write(str(k[4]))                # Iškr. data
-        cols[5].write(ikr_laiko_label)          # Iškr. laikas
-        cols[6].write(str(k[6])[:6])            # Priekaba (max 6)
-        cols[7].write(str(k[15]))               # Km
+        cols[0].write(str(k[5])[:7])           # Vilkikas (max 7)
+        cols[1].write(str(k[3]))               # Pakr. data
+        cols[2].write(pk_laiko_label)          # Pakr. laikas
+        cols[3].write(str(k[11])[:18])         # Pakrovimo vieta
+        cols[4].write(str(k[4]))               # Iškr. data
+        cols[5].write(ikr_laiko_label)         # Iškr. laikas
+        cols[6].write(str(k[6])[:6])           # Priekaba (max 6)
+        cols[7].write(str(k[15]))              # Km
 
-        # SA prieš BDL ir LDL, visi inputai VIENOJE LINIJĖJE
-        sa_in = cols[8].selectbox(
-            "", ["24", "45"], index=["24", "45"].index(sa) if sa in ["24", "45"] else 0, key=f"sa_{k[0]}", label_visibility="collapsed"
+        # SA, BDL, LDL
+        sa_in = cols[8].selectbox("", ["24", "45"], index=["24", "45"].index(sa) if sa in ["24", "45"] else 0, key=f"sa_{k[0]}", label_visibility="collapsed")
+        bdl_in = cols[9].text_input("", value=str(bdl), key=f"bdl_{k[0]}", label_visibility="collapsed", placeholder="")
+        ldl_in = cols[10].text_input("", value=str(ldl), key=f"ldl_{k[0]}", label_visibility="collapsed", placeholder="")
+
+        # Pakrovimo update
+        pk_disabled = pk_status == "Pakrauta"
+        pk_bg = get_status_bg(pk_status, pakr=True)
+        pk_data_in = cols[11].date_input("", value=pk_data, key=f"pkdata_{k[0]}", disabled=pk_disabled)
+        pk_laikas_in = cols[12].selectbox("", time_options, index=time_options.index(pk_laikas) if pk_laikas in time_options else 32, key=f"pktime_{k[0]}", disabled=pk_disabled)
+        pk_status_in = cols[13].selectbox(
+            "", ["-", "Atvyko", "Pakrauta", "Kita"],
+            index=["-", "Atvyko", "Pakrauta", "Kita"].index(pk_status if pk_status in ["-", "Atvyko", "Pakrauta", "Kita"] else 0),
+            key=f"pkstatus_{k[0]}", label_visibility="collapsed"
         )
-        bdl_in = cols[9].text_input(
-            "", value=str(bdl), key=f"bdl_{k[0]}", label_visibility="collapsed", placeholder=" "
+        # Fonas statusui
+        cols[13].markdown(f"<style>div[data-testid='stVerticalBlock'] div[role='listbox']{{{pk_bg}}}</style>", unsafe_allow_html=True)
+
+        # Iškrovimo update
+        ikr_disabled = ikr_status == "Iškrauta"
+        ikr_bg = get_status_bg(ikr_status, pakr=False)
+        ikr_data_in = cols[14].date_input("", value=ikr_data, key=f"ikrdata_{k[0]}", disabled=ikr_disabled)
+        ikr_laikas_in = cols[15].selectbox("", time_options, index=time_options.index(ikr_laikas) if ikr_laikas in time_options else 32, key=f"iktime_{k[0]}", disabled=ikr_disabled)
+        ikr_status_in = cols[16].selectbox(
+            "", ["-", "Atvyko", "Iškrauta", "Kita"],
+            index=["-", "Atvyko", "Iškrauta", "Kita"].index(ikr_status if ikr_status in ["-", "Atvyko", "Iškrauta", "Kita"] else 0),
+            key=f"ikrstatus_{k[0]}", label_visibility="collapsed"
         )
-        ldl_in = cols[10].text_input(
-            "", value=str(ldl), key=f"ldl_{k[0]}", label_visibility="collapsed", placeholder=" "
-        )
+        cols[16].markdown(f"<style>div[data-testid='stVerticalBlock'] div[role='listbox']{{{ikr_bg}}}</style>", unsafe_allow_html=True)
 
-        # Pakrovimo update (data, laikas, statusas) - viena linija
-        with cols[11]:
-            pkcol = st.columns([1.3,1,1.4])
-            pk_data_in = pkcol[0].date_input("", value=pk_data, key=f"pkdata_{k[0]}")
-            pk_laikas_in = pkcol[1].selectbox("", time_options, index=time_options.index(pk_laikas) if pk_laikas in time_options else 32, key=f"pktime_{k[0]}")
-            pk_status_in = pkcol[2].selectbox("", ["-", "Atvyko", "Pakrauta", "Kita"], index=["-", "Atvyko", "Pakrauta", "Kita"].index(pk_status if pk_status in ["-", "Atvyko", "Pakrauta", "Kita"] else 0), key=f"pkstatus_{k[0]}")
+        # Komentaras
+        komentaras_in = cols[17].text_input("", value=komentaras, key=f"komentaras_{k[0]}", label_visibility="collapsed", placeholder="Komentaras")
 
-        # Iškrovimo update (data, laikas, statusas) - viena linija
-        with cols[12]:
-            ikcol = st.columns([1.3,1,1.4])
-            ikr_data_in = ikcol[0].date_input("", value=ikr_data, key=f"ikrdata_{k[0]}")
-            ikr_laikas_in = ikcol[1].selectbox("", time_options, index=time_options.index(ikr_laikas) if ikr_laikas in time_options else 32, key=f"iktime_{k[0]}")
-            ikr_status_in = ikcol[2].selectbox("", ["-", "Atvyko", "Iškrauta", "Kita"], index=["-", "Atvyko", "Iškrauta", "Kita"].index(ikr_status if ikr_status in ["-", "Atvyko", "Iškrauta", "Kita"] else 0), key=f"ikrstatus_{k[0]}")
-
-        komentaras_in = cols[13].text_input("", value=komentaras, key=f"komentaras_{k[0]}", label_visibility="collapsed", placeholder="Komentaras")
-
+        # Atnaujinta: jeigu statusas ne "Iškrauta" ir >3h nuo paskutinio atnaujinimo – raudonas fonas
+        atnaujinta_bg = get_atnaujinta_bg(created, ikr_status)
         if created:
             laikas = pd.to_datetime(created)
-            cols[14].markdown(f"<span class='tiny'>{laikas.strftime('%Y-%m-%d %H:%M')}</span>", unsafe_allow_html=True)
+            cols[18].markdown(f"<div style='padding:2px 6px;{atnaujinta_bg}'>{laikas.strftime('%Y-%m-%d %H:%M')}</div>", unsafe_allow_html=True)
         else:
-            cols[14].markdown("<span class='tiny'>-</span>", unsafe_allow_html=True)
+            cols[18].markdown(f"<div style='padding:2px 6px;'>&nbsp;</div>", unsafe_allow_html=True)
 
-        save = cols[15].button("💾", key=f"save_{k[0]}")
+        # Save mygtukas
+        save = cols[19].button("💾", key=f"save_{k[0]}")
         if save:
             jau_irasas = c.execute("""
                 SELECT id FROM vilkiku_darbo_laikai WHERE vilkiko_numeris = ? AND data = ?

@@ -15,8 +15,6 @@ def show(conn, c):
         .alert-input input {background:#ffeaea !important;}
         .small-cell {padding:2px 4px !important;}
         th {padding:5px 2px;}
-        .inline-row {display:flex; align-items:center;}
-        .inline-time {font-size:11px; color:gray; margin-left:5px;}
         </style>
     """, unsafe_allow_html=True)
 
@@ -68,20 +66,10 @@ def show(conn, c):
         "Priekaba", "Km", "Darbo laikas", "Likes darbo laikas", "Savaitinė atstova", "Veiksmas"
     ]
     st.write("")
-    # Inputų stulpelius mažiname iki 0.7 ir 0.3 (input + laikas) ir sulygiuojam.
-    cols = st.columns([1,1,1.1,0.7,0.3,1.3,1,1.1,0.7,0.3,0.9,0.7,0.3,1,0.7,0.3,0.5])
-    # antraštė:
-    i = 0
-    while i < len(headers):
-        if headers[i] in ["Atvykimo į pakrovimą","Atvykimo į iškrovimą","Darbo laikas","Likes darbo laikas","Savaitinė atstova"]:
-            # sujungia per du stulpelius (input+laikas)
-            cols[i*2+3].markdown(f"<b>{headers[i]}</b>", unsafe_allow_html=True)
-            i += 1
-        else:
-            cols[i*2+3].markdown(f"<b>{headers[i]}</b>", unsafe_allow_html=True)
-            i += 1
+    cols = st.columns([1,1,1.1,1.2,1.3,1,1.1,1.2,0.9,0.7,1,1,1.1,0.5])
+    for i, label in enumerate(headers):
+        cols[i].markdown(f"<b>{label}</b>", unsafe_allow_html=True)
 
-    # kiekvienas įrašas
     for k in kroviniai:
         darbo = c.execute("""
             SELECT darbo_laikas, likes_laikas, atvykimo_pakrovimas, atvykimo_iskrovimas, savaitine_atstova, created_at
@@ -96,6 +84,15 @@ def show(conn, c):
         savaite_atstova = darbo[4] if darbo and darbo[4] else ""
         created = darbo[5] if darbo and darbo[5] else None
 
+        old_input = False
+        if created:
+            try:
+                dt = pd.to_datetime(created)
+                if (datetime.now() - dt) > timedelta(minutes=1):
+                    old_input = True
+            except: pass
+
+        # Pakrovimo laikas ir Iškrovimo laikas (jungiam į vieną string)
         pk_laikas = ""
         if k[7] and k[8]:
             pk_laikas = f"{str(k[7])[:5]} - {str(k[8])[:5]}"
@@ -112,107 +109,42 @@ def show(conn, c):
         elif k[10]:
             iskr_laikas = str(k[10])[:5]
 
-        # Sukuriame input+laikas poras
-        input_cols = st.columns([1,1,1.1,0.7,0.3,1.3,1,1.1,0.7,0.3,0.9,0.7,0.3,0.7,0.3,0.7,0.3,0.5])
-        col = 0
-        input_cols[col].write(k[5])     # Vilkikas
-        col += 1
-        input_cols[col].write(str(k[3]))# Pakr. data
-        col += 1
-        input_cols[col].write(pk_laikas)# Pakr. laikas
-        col += 1
+        cols = st.columns([1,1,1.1,1.2,1.3,1,1.1,1.2,0.9,0.7,1,1,1.1,0.5])
+        cols[0].write(k[5])                             # Vilkikas
+        cols[1].write(str(k[3]))                        # Pakr. data
+        cols[2].write(pk_laikas)                        # Pakr. laikas
 
-        # Atvykimo į pakrovimą (input + laikas)
-        atvykimas_pk = input_cols[col].text_input("", value=atv_pakrovimas, key=f"pkv_{k[0]}", label_visibility="collapsed")
-        if created:
-            try:
-                dt = pd.to_datetime(created)
-                laikas_str = dt.strftime('%Y-%m-%d %H:%M')
-                input_cols[col+1].markdown(
-                    f"<span class='inline-time'>🕒 {laikas_str}</span>",
-                    unsafe_allow_html=True
-                )
-            except: pass
-        col += 2
-
-        input_cols[col].write(f"{k[11]}{k[12]}") # Pakrovimo vieta
-        col += 1
-
-        input_cols[col].write(str(k[4])) # Iškr. data
-        col += 1
-        input_cols[col].write(iskr_laikas)
-        col += 1
-
-        # Atvykimo į iškrovimą (input + laikas)
-        atvykimas_iskr = input_cols[col].text_input("", value=atv_iskrovimas, key=f"ikr_{k[0]}", label_visibility="collapsed")
-        if created:
-            try:
-                dt = pd.to_datetime(created)
-                laikas_str = dt.strftime('%Y-%m-%d %H:%M')
-                input_cols[col+1].markdown(
-                    f"<span class='inline-time'>🕒 {laikas_str}</span>",
-                    unsafe_allow_html=True
-                )
-            except: pass
-        col += 2
-
-        input_cols[col].write(k[6])    # Priekaba
-        col += 1
-        input_cols[col].write(str(k[15])) # Km
-        col += 1
-
-        # Darbo laikas (input + laikas)
-        darbo_in = input_cols[col].number_input("", value=darbo_laikas, key=f"bdl_{k[0]}", label_visibility="collapsed")
-        if created:
-            try:
-                dt = pd.to_datetime(created)
-                laikas_str = dt.strftime('%Y-%m-%d %H:%M')
-                input_cols[col+1].markdown(
-                    f"<span class='inline-time'>🕒 {laikas_str}</span>",
-                    unsafe_allow_html=True
-                )
-            except: pass
-        col += 2
-
-        # Likęs darbo laikas (input + laikas)
-        likes_in = input_cols[col].number_input("", value=likes_laikas, key=f"ldl_{k[0]}", label_visibility="collapsed")
-        if created:
-            try:
-                dt = pd.to_datetime(created)
-                laikas_str = dt.strftime('%Y-%m-%d %H:%M')
-                input_cols[col+1].markdown(
-                    f"<span class='inline-time'>🕒 {laikas_str}</span>",
-                    unsafe_allow_html=True
-                )
-            except: pass
-        col += 2
-
-        # Savaitinė atstova (input + laikas)
-        savaite_in = input_cols[col].text_input("", value=savaite_atstova, key=f"sav_{k[0]}", label_visibility="collapsed")
-        if created:
-            try:
-                dt = pd.to_datetime(created)
-                laikas_str = dt.strftime('%Y-%m-%d %H:%M')
-                input_cols[col+1].markdown(
-                    f"<span class='inline-time'>🕒 {laikas_str}</span>",
-                    unsafe_allow_html=True
-                )
-            except: pass
-        col += 2
-
-        # Save mygtukas
-        save = input_cols[col].button("💾", key=f"save_{k[0]}")
-
-        # Tikriname ar buvo pakeista bent viena reikšmė
-        pakeista = (
-            (str(darbo_laikas) != str(darbo_in)) or
-            (str(likes_laikas) != str(likes_in)) or
-            (str(atv_pakrovimas) != str(atvykimas_pk)) or
-            (str(atv_iskrovimas) != str(atvykimas_iskr)) or
-            (str(savaite_atstova) != str(savaite_in))
+        atv_pk_class = "alert-input" if old_input else ""
+        atvykimas_pk = cols[3].text_input(
+            "", value=atv_pakrovimas, key=f"pkv_{k[0]}", label_visibility="collapsed"
+        )
+        cols[3].markdown(
+            f'<style>div[data-testid="stTextInput"] input#{k[0]} {{background:{"#ffeaea" if old_input else "inherit"}}}</style>', unsafe_allow_html=True
         )
 
-        if save and pakeista:
+        pakrovimo_vieta = f"{k[11]}{k[12]}"
+        cols[4].write(pakrovimo_vieta)
+
+        cols[5].write(str(k[4]))                        # Iškr. data
+        cols[6].write(iskr_laikas)                      # Iškr. laikas
+
+        atv_iskr_class = "alert-input" if old_input else ""
+        atvykimas_iskr = cols[7].text_input(
+            "", value=atv_iskrovimas, key=f"ikr_{k[0]}", label_visibility="collapsed"
+        )
+        cols[7].markdown(
+            f'<style>div[data-testid="stTextInput"] input#{k[0]}_i {{background:{"#ffeaea" if old_input else "inherit"}}}</style>', unsafe_allow_html=True
+        )
+
+        cols[8].write(k[6])                        # Priekaba
+        cols[9].write(str(k[15]))                  # Km
+
+        darbo_in = cols[10].number_input("", value=darbo_laikas, key=f"bdl_{k[0]}", label_visibility="collapsed")
+        likes_in = cols[11].number_input("", value=likes_laikas, key=f"ldl_{k[0]}", label_visibility="collapsed")
+        savaite_in = cols[12].text_input("", value=savaite_atstova, key=f"sav_{k[0]}", label_visibility="collapsed")
+        save = cols[13].button("💾", key=f"save_{k[0]}")
+
+        if save:
             jau_irasas = c.execute("""
                 SELECT id FROM vilkiku_darbo_laikai WHERE vilkiko_numeris = ? AND data = ?
             """, (k[5], k[3])).fetchone()
@@ -230,7 +162,4 @@ def show(conn, c):
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """, (k[5], k[3], darbo_in, likes_in, atvykimas_pk, atvykimas_iskr, savaite_in, now_str))
             conn.commit()
-            st.success("✅ Išsaugota!")
-        elif save and not pakeista:
-            st.info("Jokie duomenys nepakeisti – niekas neišsaugota.")
-
+            st.success("✅ Išsaugota!") 

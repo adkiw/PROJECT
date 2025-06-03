@@ -91,17 +91,19 @@ def show(conn, c):
             WHERE vilkiko_numeris = ? AND data = ?
             ORDER BY id DESC LIMIT 1
         """, (k[5], k[3])).fetchone()
-        bdl = darbo[0] if darbo else 0
-        ldl = darbo[1] if darbo else 0
+        bdl = darbo[0] if darbo else 0.0
+        ldl = darbo[1] if darbo else 0.0
         sa = darbo[2] if darbo and darbo[2] else "24"
         created = darbo[3] if darbo and darbo[3] else None
 
         pk_status = darbo[4] if darbo and darbo[4] else "-"
-        pk_laikas = darbo[5] if darbo and darbo[5] else ""
+        pk_laikas = darbo[5] if darbo and darbo[5] else time_options[32]
         pk_data = pd.to_datetime(darbo[6]).date() if darbo and darbo[6] else pd.to_datetime(k[3]).date()
+
         ikr_status = darbo[7] if darbo and darbo[7] else "-"
-        ikr_laikas = darbo[8] if darbo and darbo[8] else ""
+        ikr_laikas = darbo[8] if darbo and darbo[8] else time_options[32]
         ikr_data = pd.to_datetime(darbo[9]).date() if darbo and darbo[9] else pd.to_datetime(k[4]).date()
+
         komentaras = darbo[10] if darbo and darbo[10] else ""
 
         pk_laiko_label = f"{str(k[7])[:5]} - {str(k[8])[:5]}" if k[7] and k[8] else (str(k[7])[:5] if k[7] else (str(k[8])[:5] if k[8] else ""))
@@ -117,18 +119,26 @@ def show(conn, c):
         cols[5].write(ikr_laiko_label)         # Iškr. laikas
         cols[6].write(k[6])                    # Priekaba
         cols[7].write(str(k[15]))              # Km
-        bdl_in = cols[8].number_input("", value=bdl, key=f"bdl_{k[0]}", label_visibility="collapsed", step=0.1)
-        ldl_in = cols[9].number_input("", value=ldl, key=f"ldl_{k[0]}", label_visibility="collapsed", step=0.1)
-        sa_in = cols[10].selectbox("", ["24", "45"], index=["24", "45"].index(sa) if sa in ["24", "45"] else 0, key=f"sa_{k[0]}", label_visibility="collapsed")
 
-        # Pakrovimo update (data, laikas, statusas) - viena linija
+        # Svarbiausia dalis: float(bdl) ir float(ldl)
+        bdl_in = cols[8].number_input(
+            "", value=float(bdl) if bdl is not None else 0.0, key=f"bdl_{k[0]}", label_visibility="collapsed", step=0.1
+        )
+        ldl_in = cols[9].number_input(
+            "", value=float(ldl) if ldl is not None else 0.0, key=f"ldl_{k[0]}", label_visibility="collapsed", step=0.1
+        )
+        sa_in = cols[10].selectbox(
+            "", ["24", "45"], index=["24", "45"].index(sa) if sa in ["24", "45"] else 0, key=f"sa_{k[0]}", label_visibility="collapsed"
+        )
+
+        # Pakrovimo update
         with cols[11]:
             pkcol = st.columns([1.2,1,1.2])
             pk_data_in = pkcol[0].date_input("", value=pk_data, key=f"pkdata_{k[0]}")
             pk_laikas_in = pkcol[1].selectbox("", time_options, index=time_options.index(pk_laikas) if pk_laikas in time_options else 32, key=f"pktime_{k[0]}")
             pk_status_in = pkcol[2].selectbox("", ["-", "Atvyko", "Pakrauta", "Kita"], index=["-", "Atvyko", "Pakrauta", "Kita"].index(pk_status if pk_status in ["-", "Atvyko", "Pakrauta", "Kita"] else 0), key=f"pkstatus_{k[0]}")
 
-        # Iškrovimo update (data, laikas, statusas) - viena linija
+        # Iškrovimo update
         with cols[12]:
             ikcol = st.columns([1.2,1,1.2])
             ikr_data_in = ikcol[0].date_input("", value=ikr_data, key=f"ikrdata_{k[0]}")
@@ -136,6 +146,7 @@ def show(conn, c):
             ikr_status_in = ikcol[2].selectbox("", ["-", "Atvyko", "Iškrauta", "Kita"], index=["-", "Atvyko", "Iškrauta", "Kita"].index(ikr_status if ikr_status in ["-", "Atvyko", "Iškrauta", "Kita"] else 0), key=f"ikrstatus_{k[0]}")
 
         komentaras_in = cols[13].text_input("", value=komentaras, key=f"komentaras_{k[0]}", label_visibility="collapsed", placeholder="Komentaras")
+
         if created:
             laikas = pd.to_datetime(created)
             cols[14].markdown(f"<span class='tiny'>{laikas.strftime('%Y-%m-%d %H:%M')}</span>", unsafe_allow_html=True)

@@ -1,8 +1,8 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, date
 
-# CSS turi būti po st.set_page_config, bet prieš visą kitą
+# CSS iškart po set_page_config (nepamiršk, main.py pradžioje PRIVALO būti st.set_page_config)
 st.markdown("""
     <style>
     th, td {font-size: 12px !important;}
@@ -14,6 +14,26 @@ st.markdown("""
     div[role="option"] svg, div[role="combobox"] svg, span[data-baseweb="select"] svg { display: none !important; }
     </style>
 """, unsafe_allow_html=True)
+
+def format_time_str(input_str):
+    digits = "".join(filter(str.isdigit, str(input_str)))
+    if not digits:
+        return ""
+    if len(digits) == 1:
+        h = digits
+        return f"0{h}:00"
+    if len(digits) == 2:
+        h = digits
+        return f"{int(h):02d}:00"
+    if len(digits) == 3:
+        h = digits[:-2]
+        m = digits[-2:]
+        return f"0{int(h)}:{int(m):02d}"
+    if len(digits) == 4:
+        h = digits[:-2]
+        m = digits[-2:]
+        return f"{int(h):02d}:{int(m):02d}"
+    return input_str
 
 def show(conn, c):
     st.title("DISPO – Vilkikų ir krovinių atnaujinimas (Update)")
@@ -40,27 +60,36 @@ def show(conn, c):
             c.execute(f"ALTER TABLE vilkiku_darbo_laikai ADD COLUMN {col} {coltype}")
     conn.commit()
 
+    # 1. Filtrai
     vadybininkai = [r[0] for r in c.execute(
         "SELECT DISTINCT vadybininkas FROM vilkikai WHERE vadybininkas IS NOT NULL AND vadybininkas != ''"
     ).fetchall()]
-    if not vadybininkai:
-        st.warning("Nėra nė vieno transporto vadybininko su priskirtais vilkikais.")
-        return
-
+    grupe_list = [r[0] for r in c.execute("SELECT pavadinimas FROM grupes").fetchall()]
     vadyb = st.selectbox("Pasirink transporto vadybininką", [""] + vadybininkai, index=0)
-    if not vadyb:
-        return
+    grupe_filtras = st.selectbox("Filtruok pagal transporto grupę", [""] + grupe_list, index=0)
 
-    filter_value = st.text_input("Filtras (klientas arba užsakymo numeris)", "")
+    # 2. Vilkikai pagal pasirinktus filtrus
+    vilkikai_info = c.execute("""
+        SELECT v.numeris, g.pavadinimas
+        FROM vilkikai v
+        LEFT JOIN darbuotojai d ON v.vadybininkas = d.vardas
+        LEFT JOIN grupes g ON d.grupe = g.pavadinimas
+    """).fetchall()
+    # Filtruojam pagal vadybininką ir grupę
+    vilkikai = []
+    for v, g in vilkikai_info:
+        if vadyb and c.execute("SELECT vadybininkas FROM vilkikai WHERE numeris = ?", (v,)).fetchone()[0] != vadyb:
+            continue
+        if grupe_filtras and (g or "") != grupe_filtras:
+            continue
+        vilkikai.append(v)
 
-    vilkikai = [r[0] for r in c.execute(
-        "SELECT numeris FROM vilkikai WHERE vadybininkas = ?", (vadyb,)
-    ).fetchall()]
     if not vilkikai:
-        st.info("Nėra vilkikų šiam vadybininkui.")
+        st.info("Nėra vilkikų pagal pasirinktus filtrus.")
         return
 
-    today = datetime.now().date()
+    # 3. Paimam kroviniai, sortinam pagal vilkiko numerį ir datą
+    today = date.today()
     placeholders = ", ".join("?" for _ in vilkikai)
     query = f"""
         SELECT id, klientas, uzsakymo_numeris, pakrovimo_data, iskrovimo_data, 
@@ -71,19 +100,12 @@ def show(conn, c):
                ekspedicijos_vadybininkas
         FROM kroviniai
         WHERE vilkikas IN ({placeholders}) AND pakrovimo_data >= ?
+        ORDER BY vilkikas ASC, pakrovimo_data ASC
     """
     params = list(vilkikai) + [str(today)]
-    if filter_value:
-        query += " AND (klientas LIKE ? OR uzsakymo_numeris LIKE ?)"
-        params += [f"%{filter_value}%", f"%{filter_value}%"]
-    query += " ORDER BY vilkikas, pakrovimo_data, iskrovimo_data"
     kroviniai = c.execute(query, params).fetchall()
 
-    if not kroviniai:
-        st.info("Nėra būsimų krovinių šiems vilkikams pagal nurodytą filtrą.")
-        return
-
-    # Transporto ir ekspedicinė grupė paėmimas
+    # 4. Transporto ir ekspedicinė grupė paėmimas
     vilk_grupes = dict(c.execute("""
         SELECT v.numeris, g.pavadinimas FROM vilkikai v
         LEFT JOIN darbuotojai d ON v.vadybininkas = d.vardas
@@ -95,6 +117,7 @@ def show(conn, c):
         LEFT JOIN grupes g ON d.grupe = g.pavadinimas
     """).fetchall())
 
+    # 5. Stulpeliai
     col_widths = [
         0.5,  # Save
         0.85,  # Atnaujinta:
@@ -136,19 +159,9 @@ def show(conn, c):
     for i, label in enumerate(headers):
         cols[i].markdown(f"<b>{label}</b>", unsafe_allow_html=True)
 
-    def format_time_str(input_str):
-        digits = "".join(filter(str.isdigit, str(input_str)))
-        if not digits:
-            return ""
-        if len(digits) <= 2:
-            h = digits
-            return f"{int(h):02d}:00"
-        else:
-            h = digits[:-2]
-            m = digits[-2:]
-            return f"{int(h):02d}:{int(m):02d}"
-
+    # 6. Pagrindinė lentelė
     for k in kroviniai:
+        # Patikrinam, ar kroviniui reikia išnykti (Iškrauta + iskrovimo_data < šiandien)
         darbo = c.execute("""
             SELECT sa, darbo_laikas, likes_laikas, created_at,
                    pakrovimo_statusas, pakrovimo_laikas, pakrovimo_data,
@@ -159,6 +172,13 @@ def show(conn, c):
             WHERE vilkiko_numeris = ? AND data = ?
             ORDER BY id DESC LIMIT 1
         """, (k[5], k[3])).fetchone()
+        iskrovimo_statusas = darbo[7] if darbo and darbo[7] else ""
+        iskrovimo_data = darbo[9] if darbo and darbo[9] else str(k[4])
+        if (
+            iskrovimo_statusas == "Iškrauta" and
+            pd.to_datetime(iskrovimo_data).date() < today
+        ):
+            continue  # NErodom šio krovinio
 
         sa = darbo[0] if darbo and darbo[0] else ""
         bdl = darbo[1] if darbo and darbo[1] not in [None, ""] else ""
@@ -167,9 +187,6 @@ def show(conn, c):
         pk_status = darbo[4] if darbo and darbo[4] else ""
         pk_laikas = darbo[5] if darbo and darbo[5] else (str(k[7])[:5] if k[7] else "")
         pk_data = darbo[6] if darbo and darbo[6] else str(k[3])
-        ikr_status = darbo[7] if darbo and darbo[7] else ""
-        ikr_laikas = darbo[8] if darbo and darbo[8] else (str(k[9])[:5] if k[9] else "")
-        ikr_data = darbo[9] if darbo and darbo[9] else str(k[4])
         komentaras = darbo[10] if darbo and darbo[10] else ""
         trans_gr = darbo[12] if darbo and darbo[12] else vilk_grupes.get(k[5], "")
         eksp_gr = darbo[13] if darbo and darbo[13] else eksp_grupes.get(k[0], "")
@@ -212,7 +229,7 @@ def show(conn, c):
         # 11) Transporto grupė
         row_cols[11].write(trans_gr or "")
         # 12) Transporto vadybininkas
-        row_cols[12].write(vadyb)
+        row_cols[12].write(c.execute("SELECT vadybininkas FROM vilkikai WHERE numeris = ?", (k[5],)).fetchone()[0])
         # 13) Ekspedicinė grupė
         row_cols[13].write(eksp_gr or "")
         # 14) Ekspedicijos vadybininkas
@@ -235,6 +252,7 @@ def show(conn, c):
         pk_time_key = f"pk_time_{k[0]}"
         formatted_pk = format_time_str(pk_laikas) if pk_laikas else ""
         pk_laikas_in = row_cols[19].text_input("", value=formatted_pk, key=pk_time_key, label_visibility="collapsed", placeholder="HHMM")
+        # Automatinis formatavimas (nebūtina, bet jei nori - gali naudot input_on_change)
 
         # 20) Pakrovimo statusas
         pk_status_options = [""] + ["Atvyko", "Pakrauta", "Kita"]
@@ -242,6 +260,7 @@ def show(conn, c):
         pk_status_in = row_cols[20].selectbox("", options=pk_status_options, index=default_pk_status_idx, key=f"pk_status_{k[0]}", label_visibility="collapsed")
 
         # 21) Iškr. data (edit)
+        ikr_data = darbo[9] if darbo and darbo[9] else str(k[4])
         try:
             default_ikr_date = datetime.fromisoformat(ikr_data).date()
         except:
@@ -250,11 +269,13 @@ def show(conn, c):
         ikr_data_in = row_cols[21].date_input("", value=default_ikr_date, key=ikr_data_key, label_visibility="collapsed")
 
         # 22) Iškr. laikas (edit)
+        ikr_laikas = darbo[8] if darbo and darbo[8] else (str(k[9])[:5] if k[9] else "")
         ikr_time_key = f"ikr_time_{k[0]}"
         formatted_ikr = format_time_str(ikr_laikas) if ikr_laikas else ""
         ikr_laikas_in = row_cols[22].text_input("", value=formatted_ikr, key=ikr_time_key, label_visibility="collapsed", placeholder="HHMM")
 
         # 23) Iškr. statusas
+        ikr_status = darbo[7] if darbo and darbo[7] else ""
         ikr_status_options = [""] + ["Atvyko", "Iškrauta", "Kita"]
         default_ikr_status_idx = ikr_status_options.index(ikr_status) if ikr_status in ikr_status_options else 0
         ikr_status_in = row_cols[23].selectbox("", options=ikr_status_options, index=default_ikr_status_idx, key=f"ikr_status_{k[0]}", label_visibility="collapsed")
@@ -270,7 +291,6 @@ def show(conn, c):
             now_str = datetime.now().isoformat()
             formatted_pk_date = pk_data_in.isoformat()
             formatted_ikr_date = ikr_data_in.isoformat()
-
             if jau_irasas:
                 c.execute("""
                     UPDATE vilkiku_darbo_laikai
@@ -284,7 +304,9 @@ def show(conn, c):
                     sa_in, bdl_in, ldl_in, now_str,
                     pk_status_in, pk_laikas_in, formatted_pk_date,
                     ikr_status_in, ikr_laikas_in, formatted_ikr_date,
-                    komentaras_in, vadyb, k[16] if len(k)>16 else "",
+                    komentaras_in,
+                    c.execute("SELECT vadybininkas FROM vilkikai WHERE numeris = ?", (k[5],)).fetchone()[0],
+                    k[16] if len(k)>16 else "",
                     trans_gr, eksp_gr, jau_irasas[0]
                 ))
             else:
@@ -300,7 +322,9 @@ def show(conn, c):
                     k[5], k[3], sa_in, bdl_in, ldl_in, now_str,
                     pk_status_in, pk_laikas_in, formatted_pk_date,
                     ikr_status_in, ikr_laikas_in, formatted_ikr_date,
-                    komentaras_in, vadyb, k[16] if len(k)>16 else "",
+                    komentaras_in,
+                    c.execute("SELECT vadybininkas FROM vilkikai WHERE numeris = ?", (k[5],)).fetchone()[0],
+                    k[16] if len(k)>16 else "",
                     trans_gr, eksp_gr
                 ))
             conn.commit()

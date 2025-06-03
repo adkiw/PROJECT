@@ -5,31 +5,28 @@ from datetime import datetime, timedelta
 SUGGEST_PAKROVIMAS = ["Problema", "Atvyko", "Pakrautas"]
 SUGGEST_ISKROVIMAS = ["Problema", "Atvyko", "Iškrautas"]
 
-def autocomplete_box(label, value, key, allowed_words):
-    """Sukuria tekstinį lauką su suggestionais apačioje."""
-    col = st.container()
-    val = col.text_input(label, value=value, key=key)
-    suggestions = [w for w in allowed_words if val and w.lower().startswith(val.lower())]
-    if val and not val.replace(":", "").isdigit() and val not in allowed_words:
-        # Jeigu pradeda rašyti žodį, rodo suggestionus
-        for sugg in suggestions:
-            if col.button(f"Pasirinkti: {sugg}", key=f"sug_{key}_{sugg}"):
-                st.session_state[key] = sugg
-                val = sugg
-    return val
-
-def is_valid_input(val, allowed_words):
-    """Tikrinti ar val yra laikas (hh:mm) arba leidžiamas žodis."""
-    if val in allowed_words:
-        return True
-    try:
-        h, m = map(int, val.split(":"))
-        return 0 <= h < 24 and 0 <= m < 60
-    except Exception:
-        return False
-
 def show(conn, c):
     st.title("DISPO – Vilkikų ir krovinių atnaujinimas (Update)")
+
+    st.markdown("""
+        <style>
+        .stInput input, .stInput textarea {min-height:2.2em;}
+        .stTextInput>div>div>input, .stNumberInput>div>div>input {
+            min-height:2.2em;
+            padding: 2px 6px;
+        }
+        .alert-input input {background:#ffeaea !important;}
+        .small-cell {padding:2px 4px !important;}
+        th {padding:5px 2px;}
+        </style>
+    """, unsafe_allow_html=True)
+
+    existing = [r[1] for r in c.execute("PRAGMA table_info(vilkiku_darbo_laikai)").fetchall()]
+    if "savaitine_atstova" not in existing:
+        c.execute("ALTER TABLE vilkiku_darbo_laikai ADD COLUMN savaitine_atstova TEXT")
+    if "created_at" not in existing:
+        c.execute("ALTER TABLE vilkiku_darbo_laikai ADD COLUMN created_at TEXT")
+    conn.commit()
 
     vadybininkai = [r[0] for r in c.execute(
         "SELECT DISTINCT vadybininkas FROM vilkikai WHERE vadybininkas IS NOT NULL AND vadybininkas != ''"
@@ -90,6 +87,14 @@ def show(conn, c):
         savaite_atstova = darbo[4] if darbo and darbo[4] else ""
         created = darbo[5] if darbo and darbo[5] else None
 
+        old_input = False
+        if created:
+            try:
+                dt = pd.to_datetime(created)
+                if (datetime.now() - dt) > timedelta(minutes=1):
+                    old_input = True
+            except: pass
+
         # Formatuojam laikus
         pk_laikas = ""
         if k[7] and k[8]:
@@ -98,6 +103,7 @@ def show(conn, c):
             pk_laikas = str(k[7])[:5]
         elif k[8]:
             pk_laikas = str(k[8])[:5]
+
         iskr_laikas = ""
         if k[9] and k[10]:
             iskr_laikas = f"{str(k[9])[:5]} - {str(k[10])[:5]}"
@@ -105,7 +111,6 @@ def show(conn, c):
             iskr_laikas = str(k[9])[:5]
         elif k[10]:
             iskr_laikas = str(k[10])[:5]
-        pakrovimo_vieta = f"{k[11]}{k[12]}"
 
         # Lentelės eilutė
         cols = st.columns([1,1,1.2,1.3,1.3,1,1.2,1.3,0.9,0.7,1,1,1.1,0.5])
@@ -113,49 +118,61 @@ def show(conn, c):
         cols[1].write(str(k[3]))                        # Pakr. data
         cols[2].write(pk_laikas)                        # Pakrovimo laikas nuo-iki
 
-        # Vienas input laukas su autocomplete ir tikrinimu!
-        atvykimas_pk = autocomplete_box(
-            "", value=atv_pakrovimas, key=f"pkv_{k[0]}", allowed_words=SUGGEST_PAKROVIMAS
+        # --- Atvykimo į pakrovimą (input su autocomplete)
+        atvykimas_pk = cols[3].text_input(
+            "",
+            value=atv_pakrovimas,
+            key=f"pkv_{k[0]}",
+            label_visibility="collapsed",
+            placeholder="pvz: 10:12 arba pasirinkite"
         )
-        if atvykimas_pk and not is_valid_input(atvykimas_pk, SUGGEST_PAKROVIMAS):
-            cols[3].error("❌ Tik laikas arba: " + ", ".join(SUGGEST_PAKROVIMAS))
-        else:
-            cols[3].text("") # just for spacing
-
+        if atvykimas_pk and atvykimas_pk not in SUGGEST_PAKROVIMAS and not atvykimas_pk.replace(":", "").isdigit():
+            st.warning("Galimi tik laikai arba: " + ", ".join(SUGGEST_PAKROVIMAS))
+        cols[3].selectbox(
+            "", options=[""]+SUGGEST_PAKROVIMAS, key=f"suggpk_{k[0]}", index=0,
+            label_visibility="collapsed"
+        )
+        pakrovimo_vieta = f"{k[11]}{k[12]}"
         cols[4].write(pakrovimo_vieta)                  # Pakrovimo vieta
 
         cols[5].write(str(k[4]))                        # Iškr. data
         cols[6].write(iskr_laikas)                      # Iškr. laikas nuo-iki
 
-        atvykimas_iskr = autocomplete_box(
-            "", value=atv_iskrovimas, key=f"ikr_{k[0]}", allowed_words=SUGGEST_ISKROVIMAS
+        # --- Atvykimo į iškrovimą (input su autocomplete)
+        atvykimas_iskr = cols[7].text_input(
+            "",
+            value=atv_iskrovimas,
+            key=f"ikr_{k[0]}",
+            label_visibility="collapsed",
+            placeholder="pvz: 12:25 arba pasirinkite"
         )
-        if atvykimas_iskr and not is_valid_input(atvykimas_iskr, SUGGEST_ISKROVIMAS):
-            cols[7].error("❌ Tik laikas arba: " + ", ".join(SUGGEST_ISKROVIMAS))
-        else:
-            cols[7].text("") # spacing
+        if atvykimas_iskr and atvykimas_iskr not in SUGGEST_ISKROVIMAS and not atvykimas_iskr.replace(":", "").isdigit():
+            st.warning("Galimi tik laikai arba: " + ", ".join(SUGGEST_ISKROVIMAS))
+        cols[7].selectbox(
+            "", options=[""]+SUGGEST_ISKROVIMAS, key=f"suggikr_{k[0]}", index=0,
+            label_visibility="collapsed"
+        )
 
         cols[8].write(k[6])                       # Priekaba
         cols[9].write(str(k[15]))                 # Km
 
         darbo_in = cols[10].number_input("", value=darbo_laikas, key=f"bdl_{k[0]}", label_visibility="collapsed")
         likes_in = cols[11].number_input("", value=likes_laikas, key=f"ldl_{k[0]}", label_visibility="collapsed")
+
         savaite_in = cols[12].text_input("", value=savaite_atstova, key=f"sav_{k[0]}", label_visibility="collapsed")
         save = cols[13].button("💾", key=f"save_{k[0]}")
 
         if save:
-            if atvykimas_pk and not is_valid_input(atvykimas_pk, SUGGEST_PAKROVIMAS):
-                st.error(f"Bloga reikšmė: {atvykimas_pk}")
-                return
-            if atvykimas_iskr and not is_valid_input(atvykimas_iskr, SUGGEST_ISKROVIMAS):
-                st.error(f"Bloga reikšmė: {atvykimas_iskr}")
-                return
             jau_irasas = c.execute("""
                 SELECT id FROM vilkiku_darbo_laikai WHERE vilkiko_numeris = ? AND data = ?
             """, (k[5], k[3])).fetchone()
             now_str = datetime.now().isoformat()
             pk_val = atvykimas_pk
             ikr_val = atvykimas_iskr
+            if atvykimas_pk in SUGGEST_PAKROVIMAS:
+                pk_val = atvykimas_pk
+            if atvykimas_iskr in SUGGEST_ISKROVIMAS:
+                ikr_val = atvykimas_iskr
             if jau_irasas:
                 c.execute("""
                     UPDATE vilkiku_darbo_laikai

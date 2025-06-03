@@ -1,9 +1,8 @@
 import streamlit as st
+st.set_page_config(layout="wide")
+
 from modules import dispo, kroviniai, vilkikai, priekabos, grupes, vairuotojai, klientai, darbuotojai, nustatymai, update
 from db import init_db
-
-# Streamlit išdėstymo nustatymas
-st.set_page_config(layout="wide")
 
 # Prisijungimas prie DB
 conn, c = init_db()
@@ -12,7 +11,7 @@ conn, c = init_db()
 moduliai = [
     "Dispo", "Kroviniai", "Vilkikai", "Priekabos",
     "Grupės", "Vairuotojai", "Klientai",
-    "Darbuotojai", "Nustatymai", "Update"  # <- naujas modulis
+    "Darbuotojai", "Nustatymai", "Update"
 ]
 
 # Modulio pasirinkimas

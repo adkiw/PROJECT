@@ -7,13 +7,8 @@ def show(conn, c):
 
     st.markdown("""
         <style>
-        .stInput input, .stInput textarea {min-height:2.2em;}
-        .stTextInput>div>div>input, .stNumberInput>div>div>input {
-            min-height:2.2em;
-            padding: 2px 6px;
-        }
-        .alert-input input {background:#ffeaea !important;}
-        .small-cell {padding:2px 4px !important;}
+        .input-wrap { display: flex; align-items: center; gap: 6px; }
+        .input-time { font-size: 11px; color: gray; white-space: nowrap; margin-left: 6px;}
         th {padding:5px 2px;}
         </style>
     """, unsafe_allow_html=True)
@@ -61,13 +56,15 @@ def show(conn, c):
         return
 
     headers = [
-        "Vilkikas", "Pakr. data", "Pakr. laikas", "Atvykimo į pakrovimą", "Pakrovimo vieta",
-        "Iškr. data", "Iškr. laikas", "Atvykimo į iškrovimą",
-        "Priekaba", "Km", "Darbo laikas", "Likes darbo laikas", "Savaitinė atstova", "Veiksmas"
+        "Vilkikas", "Pakr. data", "Pakr. laikas", 
+        "Atvykimas į pakrovimą", "Pakrovimo vieta",
+        "Iškr. data", "Iškr. laikas", 
+        "Atvykimas į iškrovimą", "Priekaba", "Km", 
+        "Darbo laikas", "Liko darbo laiko", "Savaitinė atstova", "Veiksmas"
     ]
     st.write("")
-    # Didesnis plotis tekstui, mažesnis input+laikui
-    cols = st.columns([1,1,1.1,0.7,1.3,1,1.1,0.7,0.9,0.7,0.7,0.7,0.7,0.5])
+    # Naudojame lygius stulpelius visiems inputams ir laukams
+    cols = st.columns([1,1,1,1.6,1.3,1,1,1.6,1,0.9,1.6,1.6,1.6,0.7])
     for i, label in enumerate(headers):
         cols[i].markdown(f"<b>{label}</b>", unsafe_allow_html=True)
 
@@ -85,7 +82,6 @@ def show(conn, c):
         savaite_atstova = darbo[4] if darbo and darbo[4] else ""
         created = darbo[5] if darbo and darbo[5] else None
 
-        # Laiko formatavimas
         laikas_str = ""
         if created:
             try:
@@ -110,64 +106,66 @@ def show(conn, c):
         elif k[10]:
             iskr_laikas = str(k[10])[:5]
 
-        cols = st.columns([1,1,1.1,0.7,1.3,1,1.1,0.7,0.9,0.7,0.7,0.7,0.7,0.5])
-        cols[0].write(k[5])                             # Vilkikas
-        cols[1].write(str(k[3]))                        # Pakr. data
-        cols[2].write(pk_laikas)                        # Pakr. laikas
+        cols = st.columns([1,1,1,1.6,1.3,1,1,1.6,1,0.9,1.6,1.6,1.6,0.7])
+        cols[0].write(k[5])              # Vilkikas
+        cols[1].write(str(k[3]))         # Pakrovimo data
+        cols[2].write(pk_laikas)         # Pakrovimo laikas
 
-        # Atvykimo į pakrovimą
-        pk_col1, pk_col2 = cols[3].columns([2, 1])
-        atvykimas_pk = pk_col1.text_input("", value=atv_pakrovimas, key=f"pkv_{k[0]}", label_visibility="collapsed")
-        pk_col2.markdown(
-            f"<span style='font-size:11px; color:gray; white-space:nowrap;'>🕒 {laikas_str}</span>", 
-            unsafe_allow_html=True
-        )
+        # Atvykimas į pakrovimą: input + laikrodis horizontaliai
+        with cols[3]:
+            st.markdown('<div class="input-wrap">', unsafe_allow_html=True)
+            atvykimas_pk = st.text_input("", value=atv_pakrovimas, key=f"pkv_{k[0]}", label_visibility="collapsed")
+            st.markdown(
+                f'<span class="input-time">🕒 {laikas_str}</span>', unsafe_allow_html=True
+            )
+            st.markdown('</div>', unsafe_allow_html=True)
 
-        pakrovimo_vieta = f"{k[11]}{k[12]}"
-        cols[4].write(pakrovimo_vieta)
+        cols[4].write(f"{k[11]}{k[12]}") # Pakrovimo vieta
+        cols[5].write(str(k[4]))         # Iskrovimo data
+        cols[6].write(iskr_laikas)       # Iskrovimo laikas
 
-        cols[5].write(str(k[4]))                        # Iškr. data
-        cols[6].write(iskr_laikas)                      # Iškr. laikas
+        # Atvykimas į iškrovimą: input + laikrodis horizontaliai
+        with cols[7]:
+            st.markdown('<div class="input-wrap">', unsafe_allow_html=True)
+            atvykimas_iskr = st.text_input("", value=atv_iskrovimas, key=f"ikr_{k[0]}", label_visibility="collapsed")
+            st.markdown(
+                f'<span class="input-time">🕒 {laikas_str}</span>', unsafe_allow_html=True
+            )
+            st.markdown('</div>', unsafe_allow_html=True)
 
-        # Atvykimo į iškrovimą
-        iskr_col1, iskr_col2 = cols[7].columns([2, 1])
-        atvykimas_iskr = iskr_col1.text_input("", value=atv_iskrovimas, key=f"ikr_{k[0]}", label_visibility="collapsed")
-        iskr_col2.markdown(
-            f"<span style='font-size:11px; color:gray; white-space:nowrap;'>🕒 {laikas_str}</span>", 
-            unsafe_allow_html=True
-        )
+        cols[8].write(k[6])              # Priekaba
+        cols[9].write(str(k[15]))        # Km
 
-        cols[8].write(k[6])                        # Priekaba
-        cols[9].write(str(k[15]))                  # Km
+        # Darbo laikas: input + laikrodis horizontaliai
+        with cols[10]:
+            st.markdown('<div class="input-wrap">', unsafe_allow_html=True)
+            darbo_in = st.number_input("", value=darbo_laikas, key=f"bdl_{k[0]}", label_visibility="collapsed")
+            st.markdown(
+                f'<span class="input-time">🕒 {laikas_str}</span>', unsafe_allow_html=True
+            )
+            st.markdown('</div>', unsafe_allow_html=True)
 
-        # Darbo laikas
-        darbo_col1, darbo_col2 = cols[10].columns([2, 1])
-        darbo_in = darbo_col1.number_input("", value=darbo_laikas, key=f"bdl_{k[0]}", label_visibility="collapsed")
-        darbo_col2.markdown(
-            f"<span style='font-size:11px; color:gray; white-space:nowrap;'>🕒 {laikas_str}</span>", 
-            unsafe_allow_html=True
-        )
+        # Liko darbo laiko: input + laikrodis horizontaliai
+        with cols[11]:
+            st.markdown('<div class="input-wrap">', unsafe_allow_html=True)
+            likes_in = st.number_input("", value=likes_laikas, key=f"ldl_{k[0]}", label_visibility="collapsed")
+            st.markdown(
+                f'<span class="input-time">🕒 {laikas_str}</span>', unsafe_allow_html=True
+            )
+            st.markdown('</div>', unsafe_allow_html=True)
 
-        # Likęs darbo laikas
-        likes_col1, likes_col2 = cols[11].columns([2, 1])
-        likes_in = likes_col1.number_input("", value=likes_laikas, key=f"ldl_{k[0]}", label_visibility="collapsed")
-        likes_col2.markdown(
-            f"<span style='font-size:11px; color:gray; white-space:nowrap;'>🕒 {laikas_str}</span>", 
-            unsafe_allow_html=True
-        )
-
-        # Savaitinė atstova
-        sav_col1, sav_col2 = cols[12].columns([2, 1])
-        savaite_in = sav_col1.text_input("", value=savaite_atstova, key=f"sav_{k[0]}", label_visibility="collapsed")
-        sav_col2.markdown(
-            f"<span style='font-size:11px; color:gray; white-space:nowrap;'>🕒 {laikas_str}</span>", 
-            unsafe_allow_html=True
-        )
+        # Savaitinė atstova: input + laikrodis horizontaliai
+        with cols[12]:
+            st.markdown('<div class="input-wrap">', unsafe_allow_html=True)
+            savaite_in = st.text_input("", value=savaite_atstova, key=f"sav_{k[0]}", label_visibility="collapsed")
+            st.markdown(
+                f'<span class="input-time">🕒 {laikas_str}</span>', unsafe_allow_html=True
+            )
+            st.markdown('</div>', unsafe_allow_html=True)
 
         save = cols[13].button("💾", key=f"save_{k[0]}")
 
         if save:
-            # Tikrinti ar buvo nors vienas pokytis
             reikia_atnaujinti = (
                 darbo_in != darbo_laikas or
                 likes_in != likes_laikas or
@@ -197,4 +195,3 @@ def show(conn, c):
                 st.success("✅ Išsaugota!")
             else:
                 st.info("Nėra jokių pakeitimų – niekas neišsaugota.")
-

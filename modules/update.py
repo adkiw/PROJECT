@@ -65,7 +65,6 @@ def show(conn, c):
         st.info("Nėra būsimų krovinių šiems vilkikams.")
         return
 
-    # Headeriai
     headers = [
         "Vilkikas", "Pakr. data", "Pakr. laikas", 
         "Pakrovimo vieta", "Iškr. data", "Iškr. laikas", 
@@ -75,7 +74,7 @@ def show(conn, c):
     #            0         1        2        3           4        5       6         7      8           9            10
     #           11            12                13           14           15
 
-    col_widths = [1,1,1.1,1.3,1,1.1,0.9,0.7,1,1,1,1.7,1.7,1.7,1.2,0.8]
+    col_widths = [1,1,1,1.1,1,1,0.9,0.7,0.8,0.8,0.8,1.7,1.7,1.7,1.2,0.8]
     cols = st.columns(col_widths)
     for i, label in enumerate(headers):
         cols[i].markdown(f"<b>{label}</b>", unsafe_allow_html=True)
@@ -129,33 +128,36 @@ def show(conn, c):
         likes_in = cols[9].number_input("", value=likes_laikas, key=f"ldl_{k[0]}", label_visibility="collapsed")
         savaite_in = cols[10].text_input("", value=savaite_atstova, key=f"sav_{k[0]}", label_visibility="collapsed")
 
-        # ---- Pakrovimo update (vienas headeris, po juo input ir dropdown) ----
+        # Pakrovimo update: input + dropdown vienoje eilutėje
         with cols[11]:
-            atvykimas_pk = st.text_input(
-                "Laikas", value=atv_pakrovimas, key=f"pkv_{k[0]}", label_visibility="collapsed", placeholder="laikas"
+            pcols = st.columns([1,1])
+            atvykimas_pk = pcols[0].text_input(
+                "", value=atv_pakrovimas, key=f"pkv_{k[0]}", label_visibility="collapsed", placeholder="laikas"
             )
-            pk_status = st.selectbox(
-                "Statusas", ["-", "Atvyko", "Pakrauta", "Kita"], 
+            pk_status = pcols[1].selectbox(
+                "", ["-", "Atvyko", "Pakrauta", "Kita"], 
                 index=["-", "Atvyko", "Pakrauta", "Kita"].index(pakrovimo_statusas if pakrovimo_statusas in ["-", "Atvyko", "Pakrauta", "Kita"] else "-"),
                 key=f"pkstatus_{k[0]}"
             )
-        # ---- Iškrovimo update ----
+
+        # Iškrovimo update: input + dropdown vienoje eilutėje
         with cols[12]:
-            atvykimas_iskr = st.text_input(
-                "Laikas", value=atv_iskrovimas, key=f"ikr_{k[0]}", label_visibility="collapsed", placeholder="laikas"
+            icols = st.columns([1,1])
+            atvykimas_iskr = icols[0].text_input(
+                "", value=atv_iskrovimas, key=f"ikr_{k[0]}", label_visibility="collapsed", placeholder="laikas"
             )
-            ikr_status = st.selectbox(
-                "Statusas", ["-", "Atvyko", "Iškrauta", "Kita"], 
+            ikr_status = icols[1].selectbox(
+                "", ["-", "Atvyko", "Iškrauta", "Kita"], 
                 index=["-", "Atvyko", "Iškrauta", "Kita"].index(iskrovimo_statusas if iskrovimo_statusas in ["-", "Atvyko", "Iškrauta", "Kita"] else "-"),
                 key=f"ikrstatus_{k[0]}"
             )
 
-        # ---- Komentaras ----
+        # Komentaras
         komentaras_in = cols[13].text_input(
             "", value=komentaras, key=f"komentaras_{k[0]}", label_visibility="collapsed", placeholder="Komentaras"
         )
 
-        # ---- Atnaujinta ----
+        # Atnaujinta
         if created:
             laikas = pd.to_datetime(created)
             cols[14].markdown(
@@ -165,7 +167,7 @@ def show(conn, c):
         else:
             cols[14].markdown("<span class='tiny'>-</span>", unsafe_allow_html=True)
 
-        # ---- Save mygtukas VISADA GALE ----
+        # Save mygtukas
         save = cols[15].button("💾", key=f"save_{k[0]}")
         if save:
             jau_irasas = c.execute("""

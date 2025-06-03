@@ -16,6 +16,8 @@ def show(conn, c):
         .stDataFrame div[role="columnheader"] {
             white-space: nowrap;
         }
+        /* Pašaliname varnelę (tick) iš selectbox parinkčių */
+        div[role="option"] svg { display: none !important; }
         </style>
     """, unsafe_allow_html=True)
 
@@ -194,14 +196,10 @@ def show(conn, c):
             on_change=lambda key=pk_time_key: st.session_state.update({key: format_time_str(st.session_state[key])})
         )
 
-        # Pakrovimo statusas – selectbox
+        # Pakrovimo statusas – selectbox su tuščia pradžia ir be varnelės
         pk_status_options = ["Atvyko", "Pakrauta", "Kita"]
-        if pk_status in pk_status_options:
-            default_pk_status_idx = pk_status_options.index(pk_status)
-        else:
-            default_pk_status_idx = 0
         pk_status_in = cols[15].selectbox(
-            "", options=pk_status_options, index=default_pk_status_idx,
+            "", options=[""] + pk_status_options, index=0 if pk_status not in pk_status_options else pk_status_options.index(pk_status) + 1,
             key=f"pk_status_{k[0]}", label_visibility="collapsed"
         )
 
@@ -224,31 +222,21 @@ def show(conn, c):
             on_change=lambda key=ikr_time_key: st.session_state.update({key: format_time_str(st.session_state[key])})
         )
 
-        # Iškrovimo statusas – selectbox
+        # Iškrovimo statusas – selectbox be varnelės (tuščia pradžia)
         ikr_status_options = ["Atvyko", "Iškrauta", "Kita"]
-        if ikr_status in ikr_status_options:
-            default_ikr_status_idx = ikr_status_options.index(ikr_status)
-        else:
-            default_ikr_status_idx = 0
         ikr_status_in = cols[18].selectbox(
-            "", options=ikr_status_options, index=default_ikr_status_idx,
+            "", options=[""] + ikr_status_options, index=0 if ikr_status not in ikr_status_options else ikr_status_options.index(ikr_status) + 1,
             key=f"ikr_status_{k[0]}", label_visibility="collapsed"
         )
 
         # Komentaras
         komentaras_in = cols[19].text_input("", value=komentaras, key=f"komentaras_{k[0]}", label_visibility="collapsed")
 
-        # Atsakingi vadybininkai – selectbox iš vadybininkų sąrašo
-        trans_vadyb_in = cols[20].selectbox(
-            "", options=[""] + vadybininkai,
-            index=(vadybininkai.index(ats_trans_vadyb) + 1 if ats_trans_vadyb in vadybininkai else 0),
-            key=f"trans_vadyb_{k[0]}", label_visibility="collapsed"
-        )
-        eksp_vadyb_in = cols[21].selectbox(
-            "", options=[""] + vadybininkai,
-            index=(vadybininkai.index(ats_eksp_vadyb) + 1 if ats_eksp_vadyb in vadybininkai else 0),
-            key=f"eksp_vadyb_{k[0]}", label_visibility="collapsed"
-        )
+        # Transporto vadybininkas – nepasirenkamas, rodomas pagal vilkiką
+        cols[20].text_input("Ats. transporto vadybininkas", value=ats_trans_vadyb, disabled=True, key=f"trans_vadyb_{k[0]}")
+
+        # Ekspedicijos vadybininkas – nepasirenkamas, atėjusi reikšmė iš krovinio modulio
+        cols[21].text_input("Ats. ekspedicijos vadybininkas", value=ats_eksp_vadyb, disabled=True, key=f"eksp_vadyb_{k[0]}")
 
         # 7) Išsaugojimo logika
         if save:
@@ -270,7 +258,7 @@ def show(conn, c):
                     sa_in, bdl_in, ldl_in, now_str,
                     pk_status_in, pk_laikas_in, formatted_pk_date,
                     ikr_status_in, ikr_laikas_in, formatted_ikr_date,
-                    komentaras_in, trans_vadyb_in, eksp_vadyb_in, jau_irasas[0]
+                    komentaras_in, ats_trans_vadyb, ats_eksp_vadyb, jau_irasas[0]
                 ))
             else:
                 c.execute("""
@@ -284,7 +272,7 @@ def show(conn, c):
                     k[5], k[3], sa_in, bdl_in, ldl_in, now_str,
                     pk_status_in, pk_laikas_in, formatted_pk_date,
                     ikr_status_in, ikr_laikas_in, formatted_ikr_date,
-                    komentaras_in, trans_vadyb_in, eksp_vadyb_in
+                    komentaras_in, ats_trans_vadyb, ats_eksp_vadyb
                 ))
             conn.commit()
             st.success("✅ Išsaugota!")

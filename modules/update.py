@@ -66,7 +66,8 @@ def show(conn, c):
         "Priekaba", "Km", "Darbo laikas", "Likes darbo laikas", "Savaitinė atstova", "Veiksmas"
     ]
     st.write("")
-    cols = st.columns([1,1,1.1,1.2,1.3,1,1.1,1.2,0.9,0.7,1,1,1.1,0.5])
+    # Sumažiname input stulpelių plotį iki 0.33 (trigubai mažiau nei kiti)
+    cols = st.columns([1,1,1.1,0.33,1.3,1,1.1,0.33,0.9,0.7,0.33,0.33,0.33,0.5])
     for i, label in enumerate(headers):
         cols[i].markdown(f"<b>{label}</b>", unsafe_allow_html=True)
 
@@ -92,7 +93,6 @@ def show(conn, c):
                     old_input = True
             except: pass
 
-        # Pakrovimo laikas ir Iškrovimo laikas (jungiam į vieną string)
         pk_laikas = ""
         if k[7] and k[8]:
             pk_laikas = f"{str(k[7])[:5]} - {str(k[8])[:5]}"
@@ -109,18 +109,24 @@ def show(conn, c):
         elif k[10]:
             iskr_laikas = str(k[10])[:5]
 
-        cols = st.columns([1,1,1.1,1.2,1.3,1,1.1,1.2,0.9,0.7,1,1,1.1,0.5])
+        cols = st.columns([1,1,1.1,0.33,1.3,1,1.1,0.33,0.9,0.7,0.33,0.33,0.33,0.5])
         cols[0].write(k[5])                             # Vilkikas
         cols[1].write(str(k[3]))                        # Pakr. data
         cols[2].write(pk_laikas)                        # Pakr. laikas
 
-        atv_pk_class = "alert-input" if old_input else ""
+        # --- Atvykimo į pakrovimą (mažas input + laikas)
         atvykimas_pk = cols[3].text_input(
             "", value=atv_pakrovimas, key=f"pkv_{k[0]}", label_visibility="collapsed"
         )
-        cols[3].markdown(
-            f'<style>div[data-testid="stTextInput"] input#{k[0]} {{background:{"#ffeaea" if old_input else "inherit"}}}</style>', unsafe_allow_html=True
-        )
+        if created:
+            try:
+                dt = pd.to_datetime(created)
+                laikas_str = dt.strftime('%Y-%m-%d %H:%M')
+                cols[3].markdown(
+                    f"<span style='font-size:11px; color:gray;'>🕒 {laikas_str}</span>",
+                    unsafe_allow_html=True
+                )
+            except: pass
 
         pakrovimo_vieta = f"{k[11]}{k[12]}"
         cols[4].write(pakrovimo_vieta)
@@ -128,20 +134,59 @@ def show(conn, c):
         cols[5].write(str(k[4]))                        # Iškr. data
         cols[6].write(iskr_laikas)                      # Iškr. laikas
 
-        atv_iskr_class = "alert-input" if old_input else ""
+        # --- Atvykimo į iškrovimą (mažas input + laikas)
         atvykimas_iskr = cols[7].text_input(
             "", value=atv_iskrovimas, key=f"ikr_{k[0]}", label_visibility="collapsed"
         )
-        cols[7].markdown(
-            f'<style>div[data-testid="stTextInput"] input#{k[0]}_i {{background:{"#ffeaea" if old_input else "inherit"}}}</style>', unsafe_allow_html=True
-        )
+        if created:
+            try:
+                dt = pd.to_datetime(created)
+                laikas_str = dt.strftime('%Y-%m-%d %H:%M')
+                cols[7].markdown(
+                    f"<span style='font-size:11px; color:gray;'>🕒 {laikas_str}</span>",
+                    unsafe_allow_html=True
+                )
+            except: pass
 
         cols[8].write(k[6])                        # Priekaba
         cols[9].write(str(k[15]))                  # Km
 
+        # --- Darbo laikas (mažas input + laikas)
         darbo_in = cols[10].number_input("", value=darbo_laikas, key=f"bdl_{k[0]}", label_visibility="collapsed")
+        if created:
+            try:
+                dt = pd.to_datetime(created)
+                laikas_str = dt.strftime('%Y-%m-%d %H:%M')
+                cols[10].markdown(
+                    f"<span style='font-size:11px; color:gray;'>🕒 {laikas_str}</span>",
+                    unsafe_allow_html=True
+                )
+            except: pass
+
+        # --- Likęs darbo laikas (mažas input + laikas)
         likes_in = cols[11].number_input("", value=likes_laikas, key=f"ldl_{k[0]}", label_visibility="collapsed")
+        if created:
+            try:
+                dt = pd.to_datetime(created)
+                laikas_str = dt.strftime('%Y-%m-%d %H:%M')
+                cols[11].markdown(
+                    f"<span style='font-size:11px; color:gray;'>🕒 {laikas_str}</span>",
+                    unsafe_allow_html=True
+                )
+            except: pass
+
+        # --- Savaitinė atstova (mažas input + laikas)
         savaite_in = cols[12].text_input("", value=savaite_atstova, key=f"sav_{k[0]}", label_visibility="collapsed")
+        if created:
+            try:
+                dt = pd.to_datetime(created)
+                laikas_str = dt.strftime('%Y-%m-%d %H:%M')
+                cols[12].markdown(
+                    f"<span style='font-size:11px; color:gray;'>🕒 {laikas_str}</span>",
+                    unsafe_allow_html=True
+                )
+            except: pass
+
         save = cols[13].button("💾", key=f"save_{k[0]}")
 
         if save:

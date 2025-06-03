@@ -88,13 +88,12 @@ def show(conn, c):
         st.info("Nėra būsimų krovinių šiems vilkikams.")
         return
 
-    # Siauros kolonos
     col_widths = [
-        0.4, 0.7, 0.7, 1, 0.7, 0.7, 0.41, 0.45, 
+        0.42, 0.7, 0.7, 0.92, 0.7, 0.7, 0.41, 0.4, 
         0.45, 0.47, 0.47, # SA BDL LDL
-        1.35, 0.7, 1.1,    # Pakrovimo update
-        1.35, 0.7, 1.1,    # Iškrovimo update
-        1, 0.92, 0.47      # Komentaras, Atnaujinta, Save
+        0.96, 0.55, 0.75, # Pakrovimo update
+        0.96, 0.55, 0.75, # Iškrovimo update
+        1.09, 0.85, 0.45  # Komentaras, Atnaujinta, Save
     ]
     headers = [
         "Vilkikas", "Pakr. data", "Pakr. laikas", "Pakrovimo vieta", "Iškr. data", "Iškr. laikas", 
@@ -103,7 +102,7 @@ def show(conn, c):
     ]
     cols = st.columns(col_widths)
     for i, label in enumerate(headers):
-        if i in [11,14]: # tik pagrindiniai headeriai Pakrovimo/Iškrovimo update
+        if i in [11,14]: # tik headeriai virš update laukų
             cols[i].markdown(f"<b>{label}</b>", unsafe_allow_html=True)
         else:
             cols[i].markdown(f"{label}", unsafe_allow_html=True)
@@ -138,7 +137,7 @@ def show(conn, c):
         pk_laiko_label = f"{str(k[7])[:5]} - {str(k[8])[:5]}" if k[7] and k[8] else (str(k[7])[:5] if k[7] else (str(k[8])[:5] if k[8] else ""))
         ikr_laiko_label = f"{str(k[9])[:5]} - {str(k[10])[:5]}" if k[9] and k[10] else (str(k[9])[:5] if k[9] else (str(k[10])[:5] if k[10] else ""))
 
-        # VIENA LINIJOS CIKLE VISKAS
+        # SULYGIUOTA VIENOJE LINIJOJE, VIENAME CIKLE
         cols = st.columns(col_widths)
         cols[0].write(str(k[5])[:7])           # Vilkikas (max 7)
         cols[1].write(str(k[3]))               # Pakr. data
@@ -154,36 +153,47 @@ def show(conn, c):
         bdl_in = cols[9].text_input("", value=str(bdl), key=f"bdl_{k[0]}", label_visibility="collapsed", placeholder="")
         ldl_in = cols[10].text_input("", value=str(ldl), key=f"ldl_{k[0]}", label_visibility="collapsed", placeholder="")
 
-        # Pakrovimo update (Data, Laikas, Statusas) – VIENOJE LINIJOJE
+        # Pakrovimo update Data, Laikas, Statusas
         pk_disabled = pk_status == "Pakrauta"
         pk_bg = status_bg_color(pk_status, pakrovimas=True)
         pk_data_in = cols[11].date_input("", value=pk_data, key=f"pkdata_{k[0]}", disabled=pk_disabled)
         pk_laikas_in = cols[12].selectbox("", time_options, index=time_options.index(pk_laikas) if pk_laikas in time_options else 32, key=f"pktime_{k[0]}", disabled=pk_disabled)
-        pk_status_in = cols[13].selectbox("", ["-", "Atvyko", "Pakrauta", "Kita"],
+        pk_status_in = cols[13].selectbox(
+            "", ["-", "Atvyko", "Pakrauta", "Kita"],
             index=["-", "Atvyko", "Pakrauta", "Kita"].index(pk_status if pk_status in ["-", "Atvyko", "Pakrauta", "Kita"] else 0),
             key=f"pkstatus_{k[0]}", label_visibility="collapsed"
         )
-        # Statuso fonas CSS
+        # FONAS statusui
         cols[13].markdown(
-            f"<style>div[data-testid='stVerticalBlock'] div[role='listbox']{{background:{pk_bg}!important;}}</style>",
+            f"""<style>
+            div[data-testid='stVerticalBlock'] > div:nth-child(1) > div[role='listbox'] {{
+                background-color: {pk_bg} !important;
+                border-radius: 4px;
+            }}
+            </style>""",
             unsafe_allow_html=True
         )
 
-        # Iškrovimo update (Data, Laikas, Statusas) – VIENOJE LINIJOJE
+        # Iškrovimo update Data, Laikas, Statusas
         ikr_disabled = ikr_status == "Iškrauta"
         ikr_bg = status_bg_color(ikr_status, pakrovimas=False)
         ikr_data_in = cols[14].date_input("", value=ikr_data, key=f"ikrdata_{k[0]}", disabled=ikr_disabled)
         ikr_laikas_in = cols[15].selectbox("", time_options, index=time_options.index(ikr_laikas) if ikr_laikas in time_options else 32, key=f"iktime_{k[0]}", disabled=ikr_disabled)
-        ikr_status_in = cols[16].selectbox("", ["-", "Atvyko", "Iškrauta", "Kita"],
+        ikr_status_in = cols[16].selectbox(
+            "", ["-", "Atvyko", "Iškrauta", "Kita"],
             index=["-", "Atvyko", "Iškrauta", "Kita"].index(ikr_status if ikr_status in ["-", "Atvyko", "Iškrauta", "Kita"] else 0),
             key=f"ikrstatus_{k[0]}", label_visibility="collapsed"
         )
         cols[16].markdown(
-            f"<style>div[data-testid='stVerticalBlock'] div[role='listbox']{{background:{ikr_bg}!important;}}</style>",
+            f"""<style>
+            div[data-testid='stVerticalBlock'] > div:nth-child(1) > div[role='listbox'] {{
+                background-color: {ikr_bg} !important;
+                border-radius: 4px;
+            }}
+            </style>""",
             unsafe_allow_html=True
         )
 
-        # Komentaras
         komentaras_in = cols[17].text_input("", value=komentaras, key=f"komentaras_{k[0]}", label_visibility="collapsed", placeholder="Komentaras")
 
         # Atnaujinta – raudonas fonas, jei reikia

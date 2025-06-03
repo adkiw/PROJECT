@@ -19,11 +19,9 @@ HEADER_LABELS = {
     "pakrovimo_salis": "Pakr.<br>šalis",
     "pakrovimo_regionas": "Pakr.<br>reg.",
     "pakrovimo_miestas": "Pakr.<br>miest.",
-    "pakrovimo_vieta": "Pakr.<br>vieta",
     "iskrovimo_salis": "Iškr.<br>šalis",
     "iskrovimo_regionas": "Iškr.<br>reg.",
     "iskrovimo_miestas": "Iškr.<br>miest.",
-    "iskrovimo_vieta": "Iškr.<br>vieta",
     "klientas": "Klientas",
     "vilkikas": "Vilkikas",
     "priekaba": "Priekaba",
@@ -42,13 +40,15 @@ HEADER_LABELS = {
     "atsakingas_vadybininkas": "Atsak.<br>vadyb.",
     "svoris": "Svoris",
     "paleciu_skaicius": "Pad.<br>sk.",
+    "pakrovimo_vieta": "Pakr.<br>vieta",
+    "iskrovimo_vieta": "Iškr.<br>vieta",
 }
 
 FIELD_ORDER = [
-    "id", "busena", "pakrovimo_data", "iskrovimo_data",
-    "pakrovimo_salis", "pakrovimo_regionas", "pakrovimo_miestas", "pakrovimo_vieta",
-    "iskrovimo_salis", "iskrovimo_regionas", "iskrovimo_miestas", "iskrovimo_vieta",
-    "klientas", "vilkikas", "priekaba", "ekspedicijos_vadybininkas", "transporto_vadybininkas",
+    "id", "busena", "pakrovimo_data", "iskrovimo_data", "pakrovimo_salis", "pakrovimo_regionas",
+    "pakrovimo_miestas", "pakrovimo_vieta", "iskrovimo_salis", "iskrovimo_regionas",
+    "iskrovimo_miestas", "iskrovimo_vieta", "klientas", "vilkikas", "priekaba",
+    "ekspedicijos_vadybininkas", "transporto_vadybininkas",
     "uzsakymo_numeris", "kilometrai", "frachtas", "pakrovimo_numeris",
     "pakrovimo_laikas_nuo", "pakrovimo_laikas_iki", "pakrovimo_adresas",
     "iskrovimo_adresas", "iskrovimo_laikas_nuo", "iskrovimo_laikas_iki",
@@ -117,8 +117,8 @@ def show(conn, c):
                 .stDataFrame { overflow-x: auto; }
                 .stDataFrame thead tr th { white-space: normal; word-break: keep-all; }
                 .stDataFrame tbody tr td { white-space: normal; word-break: keep-all; }
-                /* Ištrinamas ženkliukas „v“ selectbox dropdown sąraše */
-                div[role="listbox"] svg { display: none !important; }
+                /* Ištrinamas žymeklis selectbox sąraše */
+                div[role="option"] svg { display: none !important; }
                 </style>
             """, unsafe_allow_html=True)
 
@@ -199,6 +199,7 @@ def show(conn, c):
         pk_salis_index = 0
         if not is_new:
             try:
+                # surandame įrašytą kodą sąraše
                 existing_code = data.get('pakrovimo_salis', "")
                 pk_salis_index = next(
                     i for i, x in enumerate(pk_salis_opts) if f"({existing_code})" in x
@@ -218,7 +219,7 @@ def show(conn, c):
         pakrovimo_vieta = f"{prefix_pk}{pk_regionas}" if prefix_pk and pk_regionas else ""
         colB.text_input("Pakrovimo vieta", value=pakrovimo_vieta, disabled=True)
 
-        # Likę laukai: miestas, adresas
+        # Likę laukai paliekame, jei reikia: miestas, adresas
         pk_mie = colB.text_input(
             "Pakrovimo miestas",
             value=("" if is_new else data.get('pakrovimo_miestas', "")),
@@ -240,20 +241,6 @@ def show(conn, c):
             "Pakrovimo laikas iki",
             value=(date.today().replace(hour=17, minute=0).time() if is_new else pd.to_datetime(data['pakrovimo_laikas_iki']).time()),
             key="pk_iki"
-        )
-
-        # Pakrovimo statusas (dropdown su tuščia pradine padėtimi)
-        pk_status_options = [""] + ["Atvyko", "Pakrauta", "Kita"]
-        existing_pk_status = "" if is_new else data.get('busena', "")
-        try:
-            default_pk_status_idx = pk_status_options.index(data.get('pakrovimo_statusas', "")) 
-        except ValueError:
-            default_pk_status_idx = 0
-        pk_status = colB.selectbox(
-            "Pakrovimo statusas", 
-            pk_status_options,
-            index=default_pk_status_idx,
-            key="pk_status"
         )
 
         # Iškrovimo dalis
@@ -285,7 +272,7 @@ def show(conn, c):
         iskrovimo_vieta = f"{prefix_is}{is_regionas}" if prefix_is and is_regionas else ""
         colC.text_input("Iškrovimo vieta", value=iskrovimo_vieta, disabled=True)
 
-        # Likę laukai: miestas, adresas
+        # Likę laukai paliekame, jei reikia: miestas, adresas
         is_mie = colC.text_input(
             "Iškrovimo miestas",
             value=("" if is_new else data.get('iskrovimo_miestas', "")),
@@ -311,7 +298,7 @@ def show(conn, c):
 
         # Vilkikas
         v_opts = [""] + vilkikai
-        v_idx = 0 if is_new else (v_opts.index(data.get('vilkikas', "")) if data.get('vilkikas', "") in v_opts else 0)
+        v_idx = 0 if is_new else v_opts.index(data.get('vilkikas', "")) if data.get('vilkikas', "") in v_opts else 0
         vilk = colD.selectbox("Vilkikas", v_opts, index=v_idx, key="cr_vilk")
 
         # Transporto vadybininkas – automatiškai pagal vilkiką, nepasirenkamas
@@ -354,7 +341,6 @@ def show(conn, c):
                 'pakrovimo_data': pk_data.isoformat(),
                 'pakrovimo_laikas_nuo': pk_nuo.isoformat(),
                 'pakrovimo_laikas_iki': pk_iki.isoformat(),
-                'pakrovimo_statusas': pk_status,
                 'iskrovimo_salis': is_salis.split("(")[-1][:-1] if "(" in is_salis else is_salis,
                 'iskrovimo_regionas': is_regionas,
                 'iskrovimo_miestas': is_mie,

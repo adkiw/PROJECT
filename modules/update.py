@@ -2,19 +2,8 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta, time, date
 
-def generate_time_choices(base_date, label='Pakrovimo'):
-    times = []
-    base_date = pd.to_datetime(base_date).date()
-    for h in range(0, 24):
-        for m in range(0, 60, 15):
-            dt = datetime.combine(base_date, time(h, m))
-            times.append(dt.strftime("%Y-%m-%d %H:%M"))
-    # Papildomi statusai ir pasirinkimas
-    if label == 'Pakrovimo':
-        extra = ["Atvyko", "Pakrauta", "Kita", "Kita data..."]
-    else:
-        extra = ["Atvyko", "Iškrauta", "Kita", "Kita data..."]
-    return times + extra
+def generate_time_list(step_minutes=15):
+    return [f"{h:02}:{m:02}" for h in range(24) for m in range(0, 60, step_minutes)]
 
 def show(conn, c):
     st.title("DISPO – Vilkikų ir krovinių atnaujinimas (Update)")
@@ -30,11 +19,15 @@ def show(conn, c):
         </style>
     """, unsafe_allow_html=True)
 
-    # Papildomi stulpeliai jei trūksta
+    # Reikalingi stulpeliai
     existing = [r[1] for r in c.execute("PRAGMA table_info(vilkiku_darbo_laikai)").fetchall()]
     extra_cols = [
-        ("pakrovimo_update", "TEXT"),
-        ("iskrovimo_update", "TEXT"),
+        ("pakrovimo_statusas", "TEXT"),
+        ("pakrovimo_laikas", "TEXT"),
+        ("pakrovimo_data", "TEXT"),
+        ("iskrovimo_statusas", "TEXT"),
+        ("iskrovimo_laikas", "TEXT"),
+        ("iskrovimo_data", "TEXT"),
         ("komentaras", "TEXT"),
         ("savaitine_atstova", "TEXT"),
         ("created_at", "TEXT"),
@@ -85,15 +78,25 @@ def show(conn, c):
         "Priekaba", "Km", "Darbo laikas", "Likes darbo laikas", "Savaitinė atstova",
         "Pakrovimo update", "Iškrovimo update", "Komentaras", "Atnaujinta:", "Save"
     ]
-    col_widths = [1,1,1,1.1,1,1,0.9,0.7,0.8,0.8,0.8,2,2,1.5,1.2,0.8]
+    col_widths = [1,1,1,1.1,1,1,0.9,0.7,0.8,0.8,0.8,2.6,2.6,1.5,1.2,0.8]
     cols = st.columns(col_widths)
     for i, label in enumerate(headers):
-        cols[i].markdown(f"<b>{label}</b>", unsafe_allow_html=True)
+        # Jei Pakrovimo/Iškrovimo update – header su 3 column vardais
+        if label == "Pakrovimo update":
+            cols[i].markdown("<b>Pakrovimo update</b><br><div style='display:flex;gap:2px;'><span style='width:45%'>Data</span><span style='width:30%'>Laikas</span><span style='width:25%'>Statusas</span></div>", unsafe_allow_html=True)
+        elif label == "Iškrovimo update":
+            cols[i].markdown("<b>Iškrovimo update</b><br><div style='display:flex;gap:2px;'><span style='width:45%'>Data</span><span style='width:30%'>Laikas</span><span style='width:25%'>Statusas</span></div>", unsafe_allow_html=True)
+        else:
+            cols[i].markdown(f"<b>{label}</b>", unsafe_allow_html=True)
+
+    time_options = generate_time_list()
 
     for k in kroviniai:
         darbo = c.execute("""
             SELECT darbo_laikas, likes_laikas, savaitine_atstova, created_at,
-                pakrovimo_update, iskrovimo_update, komentaras
+                pakrovimo_statusas, pakrovimo_laikas, pakrovimo_data,
+                iskrovimo_statusas, iskrovimo_laikas, iskrovimo_data,
+                komentaras
             FROM vilkiku_darbo_laikai
             WHERE vilkiko_numeris = ? AND data = ?
             ORDER BY id DESC LIMIT 1
@@ -102,9 +105,16 @@ def show(conn, c):
         likes_laikas = darbo[1] if darbo else 0
         savaite_atstova = darbo[2] if darbo and darbo[2] else ""
         created = darbo[3] if darbo and darbo[3] else None
-        pakrovimo_update = darbo[4] if darbo and darbo[4] else "-"
-        iskrovimo_update = darbo[5] if darbo and darbo[5] else "-"
-        komentaras = darbo[6] if darbo and darbo[6] else ""
+
+        pk_status = darbo[4] if darbo and darbo[4] else "-"
+        pk_laikas = darbo[5] if darbo and darbo[5] else ""
+        pk_data = pd.to_datetime(darbo[6]).date() if darbo and darbo[6] else pd.to_datetime(k[3]).date()
+
+        ikr_status = darbo[7] if darbo and darbo[7] else "-"
+        ikr_laikas = darbo[8] if darbo and darbo[8] else ""
+        ikr_data = pd.to_datetime(darbo[9]).date() if darbo and darbo[9] else pd.to_datetime(k[4]).date()
+
+        komentaras = darbo[10] if darbo and darbo[10] else ""
 
         pk_laiko_label = ""
         if k[7] and k[8]:
@@ -137,52 +147,19 @@ def show(conn, c):
         likes_in = cols[9].number_input("", value=likes_laikas, key=f"ldl_{k[0]}", label_visibility="collapsed")
         savaite_in = cols[10].text_input("", value=savaite_atstova, key=f"sav_{k[0]}", label_visibility="collapsed")
 
-        # Pakrovimo update (vienas droplistas su papildomais inputais jei reikia)
-        pk_choices = generate_time_choices(k[3], label='Pakrovimo')
-        if pakrovimo_update in pk_choices:
-            pk_index = pk_choices.index(pakrovimo_update)
-            pk_selected = pk_choices[pk_index]
-        else:
-            pk_index = len(pk_choices)-1 # "Kita data..."
-            pk_selected = pk_choices[pk_index]
-        pk_value = cols[11].selectbox(
-            "", pk_choices, index=pk_index, key=f"pkupdate_{k[0]}"
-        )
-        # Jeigu pasirinkta "Kita data...", atsidaro papildomi inputai
-        if pk_value == "Kita data...":
-            pk_data_manual = cols[11].date_input(
-                "Data", pd.to_datetime(k[3]).date(), key=f"pkdata_{k[0]}"
-            )
-            pk_time_list = [f"{h:02}:{m:02}" for h in range(24) for m in range(0,60,15)]
-            pk_time_manual = cols[11].selectbox(
-                "Laikas", pk_time_list, key=f"pktime_{k[0]}"
-            )
-            pakrovimo_update_final = f"{pk_data_manual} {pk_time_manual}"
-        else:
-            pakrovimo_update_final = pk_value
+        # Pakrovimo update: trys lygiuoti inputai po headeriu (vienoje linijoje)
+        with cols[11]:
+            pkcol = st.columns([1.2,1,1.2])
+            pk_data_in = pkcol[0].date_input("", value=pk_data, key=f"pkdata_{k[0]}")
+            pk_laikas_in = pkcol[1].selectbox("", time_options, index=time_options.index(pk_laikas) if pk_laikas in time_options else 32, key=f"pktime_{k[0]}")
+            pk_status_in = pkcol[2].selectbox("", ["-", "Atvyko", "Pakrauta", "Kita"], index=["-", "Atvyko", "Pakrauta", "Kita"].index(pk_status if pk_status in ["-", "Atvyko", "Pakrauta", "Kita"] else "-"), key=f"pkstatus_{k[0]}")
 
-        # Iškrovimo update (vienas droplistas su papildomais inputais jei reikia)
-        ikr_choices = generate_time_choices(k[4], label='Iškrovimo')
-        if iskrovimo_update in ikr_choices:
-            ikr_index = ikr_choices.index(iskrovimo_update)
-            ikr_selected = ikr_choices[ikr_index]
-        else:
-            ikr_index = len(ikr_choices)-1 # "Kita data..."
-            ikr_selected = ikr_choices[ikr_index]
-        ikr_value = cols[12].selectbox(
-            "", ikr_choices, index=ikr_index, key=f"ikrupdate_{k[0]}"
-        )
-        if ikr_value == "Kita data...":
-            ikr_data_manual = cols[12].date_input(
-                "Data", pd.to_datetime(k[4]).date(), key=f"ikrdata_{k[0]}"
-            )
-            ikr_time_list = [f"{h:02}:{m:02}" for h in range(24) for m in range(0,60,15)]
-            ikr_time_manual = cols[12].selectbox(
-                "Laikas", ikr_time_list, key=f"iktime_{k[0]}"
-            )
-            iskrovimo_update_final = f"{ikr_data_manual} {ikr_time_manual}"
-        else:
-            iskrovimo_update_final = ikr_value
+        # Iškrovimo update: trys lygiuoti inputai po headeriu (vienoje linijoje)
+        with cols[12]:
+            ikcol = st.columns([1.2,1,1.2])
+            ikr_data_in = ikcol[0].date_input("", value=ikr_data, key=f"ikrdata_{k[0]}")
+            ikr_laikas_in = ikcol[1].selectbox("", time_options, index=time_options.index(ikr_laikas) if ikr_laikas in time_options else 32, key=f"iktime_{k[0]}")
+            ikr_status_in = ikcol[2].selectbox("", ["-", "Atvyko", "Iškrauta", "Kita"], index=["-", "Atvyko", "Iškrauta", "Kita"].index(ikr_status if ikr_status in ["-", "Atvyko", "Iškrauta", "Kita"] else "-"), key=f"ikrstatus_{k[0]}")
 
         # Komentaras
         komentaras_in = cols[13].text_input(
@@ -210,21 +187,28 @@ def show(conn, c):
                 c.execute("""
                     UPDATE vilkiku_darbo_laikai
                     SET darbo_laikas=?, likes_laikas=?, savaitine_atstova=?, created_at=?,
-                        pakrovimo_update=?, iskrovimo_update=?, komentaras=?
+                        pakrovimo_statusas=?, pakrovimo_laikas=?, pakrovimo_data=?,
+                        iskrovimo_statusas=?, iskrovimo_laikas=?, iskrovimo_data=?,
+                        komentaras=?
                     WHERE id=?
                 """, (
                     darbo_in, likes_in, savaite_in, now_str,
-                    pakrovimo_update_final, iskrovimo_update_final, komentaras_in, jau_irasas[0]
+                    pk_status_in, pk_laikas_in, str(pk_data_in),
+                    ikr_status_in, ikr_laikas_in, str(ikr_data_in),
+                    komentaras_in, jau_irasas[0]
                 ))
             else:
                 c.execute("""
                     INSERT INTO vilkiku_darbo_laikai
                     (vilkiko_numeris, data, darbo_laikas, likes_laikas, savaitine_atstova, created_at,
-                     pakrovimo_update, iskrovimo_update, komentaras)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     pakrovimo_statusas, pakrovimo_laikas, pakrovimo_data,
+                     iskrovimo_statusas, iskrovimo_laikas, iskrovimo_data, komentaras)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     k[5], k[3], darbo_in, likes_in, savaite_in, now_str,
-                    pakrovimo_update_final, iskrovimo_update_final, komentaras_in
+                    pk_status_in, pk_laikas_in, str(pk_data_in),
+                    ikr_status_in, ikr_laikas_in, str(ikr_data_in),
+                    komentaras_in
                 ))
             conn.commit()
             st.success("✅ Išsaugota!")

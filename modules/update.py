@@ -130,13 +130,27 @@ def show(conn, c):
         bdl_in = cols[9].text_input("", value=str(bdl), key=f"bdl_{k[0]}", label_visibility="collapsed", placeholder="")
         ldl_in = cols[10].text_input("", value=str(ldl), key=f"ldl_{k[0]}", label_visibility="collapsed", placeholder="")
 
-        # Pakrovimo update Data, Laikas, Statusas (visi tekstiniai)
-        pk_data_in = cols[11].text_input("", value=pk_data, key=f"pkdata_{k[0]}", label_visibility="collapsed", placeholder="YYYY-MM-DD")
+        # Pakeitimai čia: vietoje text_input naudojame date_input
+        # 1. Paruošiame default reikšmę pakrovimo datai
+        try:
+            default_pk_date = datetime.strptime(pk_data, "%Y-%m-%d").date()
+        except ValueError:
+            default_pk_date = today
+        pk_date_selected = cols[11].date_input("", value=default_pk_date, key=f"pkdata_{k[0]}", label_visibility="collapsed")
+        # Konvertuojame atgal į string formatą
+        pk_data_in = pk_date_selected.strftime("%Y-%m-%d")
+
         pk_laikas_in = cols[12].text_input("", value=pk_laikas, key=f"pktime_{k[0]}", label_visibility="collapsed", placeholder="HH:MM")
         pk_status_in = cols[13].text_input("", value=pk_status, key=f"pkstatus_{k[0]}", label_visibility="collapsed", placeholder="Statusas")
 
-        # Iškrovimo update Data, Laikas, Statusas (visi tekstiniai)
-        ikr_data_in = cols[14].text_input("", value=ikr_data, key=f"ikrdata_{k[0]}", label_visibility="collapsed", placeholder="YYYY-MM-DD")
+        # Pakeitimai čia: date_input irškrovimo datai
+        try:
+            default_ikr_date = datetime.strptime(ikr_data, "%Y-%m-%d").date()
+        except ValueError:
+            default_ikr_date = today
+        ikr_date_selected = cols[14].date_input("", value=default_ikr_date, key=f"ikrdata_{k[0]}", label_visibility="collapsed")
+        ikr_data_in = ikr_date_selected.strftime("%Y-%m-%d")
+
         ikr_laikas_in = cols[15].text_input("", value=ikr_laikas, key=f"iktime_{k[0]}", label_visibility="collapsed", placeholder="HH:MM")
         ikr_status_in = cols[16].text_input("", value=ikr_status, key=f"ikrstatus_{k[0]}", label_visibility="collapsed", placeholder="Statusas")
 

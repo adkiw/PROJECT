@@ -53,12 +53,12 @@ def show(conn, c):
     today = datetime.now().date()
     placeholders = ','.join('?' for _ in vilkikai)
     kroviniai = c.execute(f"""
-        SELECT id, vilkikas, pakrovimo_data, pakrovimo_laikas_nuo, pakrovimo_laikas_iki,
-               pakrovimo_regionas, pakrovimo_salis, iskrovimo_data, iskrovimo_laikas_nuo, iskrovimo_laikas_iki,
-               iskrovimo_regionas, iskrovimo_salis, km, priekaba
+        SELECT kroviniai.id, kroviniai.vilkikas, kroviniai.pakrovimo_data, kroviniai.pakrovimo_laikas_nuo, kroviniai.pakrovimo_laikas_iki,
+               kroviniai.pakrovimo_regionas, kroviniai.pakrovimo_salis, kroviniai.iskrovimo_data, kroviniai.iskrovimo_laikas_nuo, kroviniai.iskrovimo_laikas_iki,
+               kroviniai.iskrovimo_regionas, kroviniai.iskrovimo_salis, kroviniai.km, kroviniai.priekaba
         FROM kroviniai
-        WHERE vilkikas IN ({placeholders}) AND pakrovimo_data >= ?
-        ORDER BY vilkikas, pakrovimo_data
+        WHERE kroviniai.vilkikas IN ({placeholders}) AND kroviniai.pakrovimo_data >= ?
+        ORDER BY kroviniai.vilkikas, kroviniai.pakrovimo_data
     """, (*vilkikai, str(today))).fetchall()
 
     if not kroviniai:
@@ -149,4 +149,3 @@ def show(conn, c):
                 """, (krovid, darbo_laikas, likes_laikas, atvyk_p, atvyk_i, savaite_new))
             conn.commit()
             st.success("✅ Išsaugota!")
-

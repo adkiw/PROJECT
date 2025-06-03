@@ -16,8 +16,10 @@ def show(conn, c):
         .stDataFrame div[role="columnheader"] {
             white-space: nowrap;
         }
-        /* Pašaliname varnelės (checkmark) ikonėlę selectbox pasirinkimuose */
-        div[role="option"] svg { display: none !important; }
+        /* Pašaliname varnelę ir rodyklę (checkmark / caret) selectbox pasirinkimuose */
+        div[role="option"] svg, div[role="combobox"] svg {
+            display: none !important;
+        }
         </style>
     """, unsafe_allow_html=True)
 
@@ -51,7 +53,7 @@ def show(conn, c):
         st.warning("Nėra nė vieno transporto vadybininko su priskirtais vilkikais.")
         return
 
-    # Pasirenkame transporto vadybininką (tik filtrui), bet atvaizduosime konkretaus vilkiko vadybininką
+    # Pasirenkame transporto vadybininką (tik filtrui)
     vadyb = st.selectbox("Pasirink transporto vadybininką", [""] + vadybininkai, index=0)
     if not vadyb:
         return
@@ -89,10 +91,10 @@ def show(conn, c):
         st.info("Nėra būsimų krovinių šiems vilkikams pagal nurodytą filtrą.")
         return
 
-    # 5) Definuojame stulpelių pločius ir antraštes nauja tvarka (įtraukiame "Iškr. vieta")
+    # 5) Definuojame stulpelių pločius ir antraštes, įtraukiame 'Iškr. vieta'
     col_widths = [
         0.51, 0.85, 0.42, 0.7, 0.7, 1,
-        0.7, 0.7, 0.7, 0.42, 0.4,
+        0.7, 0.7, 0.7, 0.7, 0.42, 0.4,
         0.45, 0.47, 0.47,
         0.8, 0.5, 0.75,
         0.8, 0.5, 0.75,
@@ -173,23 +175,21 @@ def show(conn, c):
         cols[4].write(
             str(k[7])[:5] + (f" - {str(k[8])[:5]}" if k[8] else "")
         )  # Pakrovimo laikas
-
         # Pakrovimo vieta – susideda iš šalies prefikso + regionas
         prefix_pk = k[11] if k[11] else ""
         region_pk = k[12] if k[12] else ""
         vieta_pk = f"{prefix_pk}{region_pk}"
-        cols[5].write(vieta_pk[:18])  # Pakrovimo vieta (nepjaunama viduryje žodžio)
+        cols[5].write(vieta_pk[:18])  # Pakrovimo vieta (TRUNC iki 18 simbolių)
 
         cols[6].write(str(k[4]))  # Iškrovimo data originali
         cols[7].write(
             str(k[9])[:5] + (f" - {str(k[10])[:5]}" if k[10] else "")
         )  # Iškrovimo laikas
-
-        # Iškrovimo vieta – susideda iš šalies prefikso + regionas
+        # Iškr. vieta – sudaroma analogiškai: šalies prefiksas + regionas
         prefix_is = k[13] if k[13] else ""
         region_is = k[14] if k[14] else ""
         vieta_is = f"{prefix_is}{region_is}"
-        cols[8].write(vieta_is[:18])  # Iškr. vieta (nepjaunama viduryje žodžio)
+        cols[8].write(vieta_is[:18])  # Iškr. vieta (TRUNC iki 18 simbolių)
 
         cols[9].write(str(k[6])[:6])   # Priekaba
         cols[10].write(str(k[15]))     # Km
@@ -228,7 +228,7 @@ def show(conn, c):
             )
         )
 
-        # Pakrovimo statusas – selectbox su pradine tuščia reikšme, be varnelės
+        # Pakrovimo statusas – selectbox su pradine tuščia reikšme
         pk_status_options = [""] + ["Atvyko", "Pakrauta", "Kita"]
         if pk_status in pk_status_options:
             default_pk_status_idx = pk_status_options.index(pk_status)
@@ -262,7 +262,7 @@ def show(conn, c):
             )
         )
 
-        # Iškrovimo statusas – selectbox su pradine tuščia reikšme, be varnelės
+        # Iškrovimo statusas – selectbox su pradine tuščia reikšme
         ikr_status_options = [""] + ["Atvyko", "Iškrauta", "Kita"]
         if ikr_status in ikr_status_options:
             default_ikr_status_idx = ikr_status_options.index(ikr_status)

@@ -5,7 +5,6 @@ from datetime import datetime, timedelta
 def show(conn, c):
     st.title("DISPO – Vilkikų ir krovinių atnaujinimas (Update)")
 
-    # --- Vadybininkų sąrašas ---
     vadybininkai = [r[0] for r in c.execute(
         "SELECT DISTINCT vadybininkas FROM vilkikai WHERE vadybininkas IS NOT NULL AND vadybininkas != ''"
     ).fetchall()]
@@ -39,7 +38,7 @@ def show(conn, c):
             "Vilkikas", "Pakr. data", "Pakr. laikas", "Pakrovimo vieta",
             "Iškr. data", "Iškr. laikas", "Iškr. vieta", "Km", "Priekaba",
             "Darbo laikas", "Likes darbo laikas",
-            "Atv. į pakrovimą", "Atv. į iškrovimą", "Savaitinis atstovas", "Išsaugoti"
+            "Atv. į pakrovimą", "Atv. į iškrovimą", "Savaitinė atstova", "Išsaugoti"
         ]
         st.markdown("<div style='overflow-x:auto'><table><tr>" +
             "".join([f"<th style='padding:4px 9px'>{h}</th>" for h in header]) +
@@ -51,9 +50,9 @@ def show(conn, c):
             pk_vieta = f"{k[6]}{k[5]}"
             is_vieta = f"{k[10]}{k[9]}"
 
-            # Darbo laikai iš duombazės (imamas paskutinis įrašas pagal vilkiką ir datą)
+            # Darbo laikai iš duombazės
             darbo = c.execute("""
-                SELECT darbo_laikas, likes_laikas, atvykimo_pakrovimas, atvykimo_iskrovimas, savaites_atstovas, created_at
+                SELECT darbo_laikas, likes_laikas, atvykimo_pakrovimas, atvykimo_iskrovimas, savaitine_atstova, created_at
                 FROM vilkiku_darbo_laikai
                 WHERE vilkiko_numeris = ? AND data = ?
                 ORDER BY id DESC LIMIT 1
@@ -62,10 +61,9 @@ def show(conn, c):
             likes_laikas = darbo[1] if darbo else 0
             atv_pakrovimas = darbo[2] if darbo else ""
             atv_iskrovimas = darbo[3] if darbo else ""
-            savaites_atstovas = darbo[4] if darbo else ""
+            savaitine_atstova = darbo[4] if darbo else ""
             paskutinis_ivedimo_laikas = darbo[5] if darbo and len(darbo) > 5 else None
 
-            # Ar jau >1 min? Raudonas stilius
             min_prasoko = False
             if paskutinis_ivedimo_laikas:
                 try:
@@ -88,20 +86,17 @@ def show(conn, c):
             cols[7].write(str(k[11]))
             cols[8].write(k[13] or "")
 
-            # Darbo laikas - raudonas, jei reikia
-            css1 = f"<div style='{style_red}'>"  # jei >1 min raudonas fonas
-            css2 = "</div>"
             with cols[9]:
-                st.markdown(css1, unsafe_allow_html=True)
+                st.markdown(f"<div style='{style_red}'>", unsafe_allow_html=True)
                 naujas_darbo = st.number_input("", value=darbo_laikas, key=f"bdl_{k[0]}", **number_kwargs)
-                st.markdown(css2, unsafe_allow_html=True)
+                st.markdown("</div>", unsafe_allow_html=True)
             with cols[10]:
-                st.markdown(css1, unsafe_allow_html=True)
+                st.markdown(f"<div style='{style_red}'>", unsafe_allow_html=True)
                 naujas_likes = st.number_input("", value=likes_laikas, key=f"ldl_{k[0]}", **number_kwargs)
-                st.markdown(css2, unsafe_allow_html=True)
+                st.markdown("</div>", unsafe_allow_html=True)
             naujas_pakrovimas = cols[11].text_input("", value=atv_pakrovimas, key=f"pakr_{k[0]}")
             naujas_iskrovimas = cols[12].text_input("", value=atv_iskrovimas, key=f"iskr_{k[0]}")
-            naujas_savaites_atstovas = cols[13].text_input("", value=savaites_atstovas, key=f"sav_{k[0]}")
+            nauja_savaitine_atstova = cols[13].text_input("", value=savaitine_atstova, key=f"sav_{k[0]}")
             save = cols[14].button("💾", key=f"saugoti_{k[0]}")
 
             if save:
@@ -112,22 +107,21 @@ def show(conn, c):
                 if jau_irasas:
                     c.execute("""
                         UPDATE vilkiku_darbo_laikai
-                        SET darbo_laikas=?, likes_laikas=?, atvykimo_pakrovimas=?, atvykimo_iskrovimas=?, savaites_atstovas=?, created_at=?
+                        SET darbo_laikas=?, likes_laikas=?, atvykimo_pakrovimas=?, atvykimo_iskrovimas=?, savaitine_atstova=?, created_at=?
                         WHERE id=?
-                    """, (naujas_darbo, naujas_likes, naujas_pakrovimas, naujas_iskrovimas, naujas_savaites_atstovas, dabar, jau_irasas[0]))
+                    """, (naujas_darbo, naujas_likes, naujas_pakrovimas, naujas_iskrovimas, nauja_savaitine_atstova, dabar, jau_irasas[0]))
                 else:
                     c.execute("""
                         INSERT INTO vilkiku_darbo_laikai
-                        (vilkiko_numeris, data, darbo_laikas, likes_laikas, atvykimo_pakrovimas, atvykimo_iskrovimas, savaites_atstovas, created_at)
+                        (vilkiko_numeris, data, darbo_laikas, likes_laikas, atvykimo_pakrovimas, atvykimo_iskrovimas, savaitine_atstova, created_at)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (k[12], k[3], naujas_darbo, naujas_likes, naujas_pakrovimas, naujas_iskrovimas, naujas_savaites_atstovas, dabar))
+                    """, (k[12], k[3], naujas_darbo, naujas_likes, naujas_pakrovimas, naujas_iskrovimas, nauja_savaitine_atstova, dabar))
                 conn.commit()
                 st.success("✅ Išsaugota!")
 
-            # Istorija (expander)
             with st.expander(f"Rodyti paskutinius 5 įrašus vilkikui {k[12]}"):
                 df = pd.read_sql_query(
-                    "SELECT data, darbo_laikas, likes_laikas, atvykimo_pakrovimas, atvykimo_iskrovimas, savaites_atstovas "
+                    "SELECT data, darbo_laikas, likes_laikas, atvykimo_pakrovimas, atvykimo_iskrovimas, savaitine_atstova "
                     "FROM vilkiku_darbo_laikai WHERE vilkiko_numeris = ? ORDER BY data DESC LIMIT 5",
                     conn, params=(k[12],)
                 )

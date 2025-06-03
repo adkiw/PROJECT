@@ -87,6 +87,12 @@ def show(conn, c):
         else:
             cols[i].markdown(f"{label}", unsafe_allow_html=True)
 
+    # Sukuriame laiko sąrašą kas 30 minučių (nuo 00:00 iki 23:30)
+    time_options = [
+        (datetime.strptime(f"{h:02d}:{m:02d}", "%H:%M")).strftime("%H:%M")
+        for h in range(0, 24) for m in (0, 30)
+    ]
+
     for k in kroviniai:
         darbo = c.execute("""
             SELECT sa, darbo_laikas, likes_laikas, created_at,
@@ -125,37 +131,70 @@ def show(conn, c):
         cols[6].write(str(k[6])[:6])           # Priekaba (max 6)
         cols[7].write(str(k[15]))              # Km
 
-        # SA, BDL, LDL – visi tik tekstiniai laukai, VIENOJE LINIOJE!
+        # SA, BDL, LDL – visi tekstiniai laukai, VIENOJE LINIOJE!
         sa_in = cols[8].text_input("", value=str(sa), key=f"sa_{k[0]}", label_visibility="collapsed", placeholder="")
         bdl_in = cols[9].text_input("", value=str(bdl), key=f"bdl_{k[0]}", label_visibility="collapsed", placeholder="")
         ldl_in = cols[10].text_input("", value=str(ldl), key=f"ldl_{k[0]}", label_visibility="collapsed", placeholder="")
 
-        # Pakeitimai čia: vietoje text_input naudojame date_input
-        # 1. Paruošiame default reikšmę pakrovimo datai
-        try:
-            default_pk_date = datetime.strptime(pk_data, "%Y-%m-%d").date()
-        except ValueError:
-            default_pk_date = today
-        pk_date_selected = cols[11].date_input("", value=default_pk_date, key=f"pkdata_{k[0]}", label_visibility="collapsed")
-        # Konvertuojame atgal į string formatą
-        pk_data_in = pk_date_selected.strftime("%Y-%m-%d")
+        # Pakrovimo update Data (tekstiniu būdu)
+        pk_data_in = cols[11].text_input(
+            "", value=pk_data, key=f"pkdata_{k[0]}", label_visibility="collapsed", placeholder="YYYY-MM-DD"
+        )
 
-        pk_laikas_in = cols[12].text_input("", value=pk_laikas, key=f"pktime_{k[0]}", label_visibility="collapsed", placeholder="HH:MM")
-        pk_status_in = cols[13].text_input("", value=pk_status, key=f"pkstatus_{k[0]}", label_visibility="collapsed", placeholder="Statusas")
+        # Pakrovimo laikas – iškrentantis sąrašas (kas 30 min.)
+        if pk_laikas in time_options:
+            default_pk_idx = time_options.index(pk_laikas)
+        else:
+            default_pk_idx = 0
+        pk_laikas_in = cols[12].selectbox(
+            "", options=time_options, index=default_pk_idx,
+            key=f"pktime_{k[0]}", label_visibility="collapsed"
+        )
 
-        # Pakeitimai čia: date_input irškrovimo datai
-        try:
-            default_ikr_date = datetime.strptime(ikr_data, "%Y-%m-%d").date()
-        except ValueError:
-            default_ikr_date = today
-        ikr_date_selected = cols[14].date_input("", value=default_ikr_date, key=f"ikrdata_{k[0]}", label_visibility="collapsed")
-        ikr_data_in = ikr_date_selected.strftime("%Y-%m-%d")
+        # Pakrovimo statusas – iškrentantis sąrašas
+        pk_status_options = ["Atvyko", "Pakrauta", "Kita"]
+        # Jei esamas statusas sutampa su vienu iš opcijų, nustatome tą index; kitu atveju, pasirenkame tuščią
+        if pk_status in pk_status_options:
+            default_pk_status_idx = pk_status_options.index(pk_status) + 1
+        else:
+            default_pk_status_idx = 0
+        pk_status_in = cols[13].selectbox(
+            "", options=[""] + pk_status_options, index=default_pk_status_idx,
+            key=f"pkstatus_{k[0]}", label_visibility="collapsed"
+        )
 
-        ikr_laikas_in = cols[15].text_input("", value=ikr_laikas, key=f"iktime_{k[0]}", label_visibility="collapsed", placeholder="HH:MM")
-        ikr_status_in = cols[16].text_input("", value=ikr_status, key=f"ikrstatus_{k[0]}", label_visibility="collapsed", placeholder="Statusas")
+        # Iškrovimo update Data (tekstiniu būdu)
+        ikr_data_in = cols[14].text_input(
+            "", value=ikr_data, key=f"ikrdata_{k[0]}", label_visibility="collapsed", placeholder="YYYY-MM-DD"
+        )
 
-        komentaras_in = cols[17].text_input("", value=komentaras, key=f"komentaras_{k[0]}", label_visibility="collapsed", placeholder="Komentaras")
+        # Iškrovimo laikas – iškrentantis sąrašas (kas 30 min.)
+        if ikr_laikas in time_options:
+            default_ikr_idx = time_options.index(ikr_laikas)
+        else:
+            default_ikr_idx = 0
+        ikr_laikas_in = cols[15].selectbox(
+            "", options=time_options, index=default_ikr_idx,
+            key=f"iktime_{k[0]}", label_visibility="collapsed"
+        )
 
+        # Iškrovimo statusas – iškrentantis sąrašas
+        ikr_status_options = ["Atvyko", "Iškrauta", "Kita"]
+        if ikr_status in ikr_status_options:
+            default_ikr_status_idx = ikr_status_options.index(ikr_status) + 1
+        else:
+            default_ikr_status_idx = 0
+        ikr_status_in = cols[16].selectbox(
+            "", options=[""] + ikr_status_options, index=default_ikr_status_idx,
+            key=f"ikrstatus_{k[0]}", label_visibility="collapsed"
+        )
+
+        # Komentaras (tekstiniu būdu)
+        komentaras_in = cols[17].text_input(
+            "", value=komentaras, key=f"komentaras_{k[0]}", label_visibility="collapsed", placeholder="Komentaras"
+        )
+
+        # Atnaujinta laikas
         atnaujinta_bg = "#ffd6d6" if (ikr_status_in != "Iškrauta" and created and (datetime.now() - pd.to_datetime(created) > timedelta(hours=3))) else "white"
         if created:
             laikas = pd.to_datetime(created)
@@ -163,6 +202,7 @@ def show(conn, c):
         else:
             cols[18].markdown(f"<div style='padding:2px 6px;'>&nbsp;</div>", unsafe_allow_html=True)
 
+        # Save mygtukas
         save = cols[19].button("💾", key=f"save_{k[0]}")
         if save:
             jau_irasas = c.execute("""

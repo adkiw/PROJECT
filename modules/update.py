@@ -70,12 +70,12 @@ def show(conn, c):
         "Vilkikas", "Pakr. data", "Pakr. laikas", 
         "Pakrovimo vieta", "Iškr. data", "Iškr. laikas", 
         "Priekaba", "Km", "Darbo laikas", "Likes darbo laikas", "Savaitinė atstova",
-        "Pakrovimo update", "Iškrovimo update", "Komentaras", "Atnaujinta:"
+        "Pakrovimo update", "Iškrovimo update", "Komentaras", "Atnaujinta:", "Save"
     ]
-    #          0         1        2        3           4        5       6         7      8           9            10
-    #         11             12                13           14
+    #            0         1        2        3           4        5       6         7      8           9            10
+    #           11            12                13           14           15
 
-    col_widths = [1,1,1.1,1.3,1,1.1,0.9,0.7,1,1,1,1.7,1.7,1.7,1.2]
+    col_widths = [1,1,1.1,1.3,1,1.1,0.9,0.7,1,1,1,1.7,1.7,1.7,1.2,0.8]
     cols = st.columns(col_widths)
     for i, label in enumerate(headers):
         cols[i].markdown(f"<b>{label}</b>", unsafe_allow_html=True)
@@ -132,20 +132,20 @@ def show(conn, c):
         # ---- Pakrovimo update (vienas headeris, po juo input ir dropdown) ----
         with cols[11]:
             atvykimas_pk = st.text_input(
-                "", value=atv_pakrovimas, key=f"pkv_{k[0]}", label_visibility="collapsed", placeholder="laikas"
+                "Laikas", value=atv_pakrovimas, key=f"pkv_{k[0]}", label_visibility="collapsed", placeholder="laikas"
             )
             pk_status = st.selectbox(
-                "", ["-", "Atvyko", "Pakrauta", "Kita"], 
+                "Statusas", ["-", "Atvyko", "Pakrauta", "Kita"], 
                 index=["-", "Atvyko", "Pakrauta", "Kita"].index(pakrovimo_statusas if pakrovimo_statusas in ["-", "Atvyko", "Pakrauta", "Kita"] else "-"),
                 key=f"pkstatus_{k[0]}"
             )
         # ---- Iškrovimo update ----
         with cols[12]:
             atvykimas_iskr = st.text_input(
-                "", value=atv_iskrovimas, key=f"ikr_{k[0]}", label_visibility="collapsed", placeholder="laikas"
+                "Laikas", value=atv_iskrovimas, key=f"ikr_{k[0]}", label_visibility="collapsed", placeholder="laikas"
             )
             ikr_status = st.selectbox(
-                "", ["-", "Atvyko", "Iškrauta", "Kita"], 
+                "Statusas", ["-", "Atvyko", "Iškrauta", "Kita"], 
                 index=["-", "Atvyko", "Iškrauta", "Kita"].index(iskrovimo_statusas if iskrovimo_statusas in ["-", "Atvyko", "Iškrauta", "Kita"] else "-"),
                 key=f"ikrstatus_{k[0]}"
             )
@@ -165,8 +165,8 @@ def show(conn, c):
         else:
             cols[14].markdown("<span class='tiny'>-</span>", unsafe_allow_html=True)
 
-        # Saugoti mygtukas (gali būti bet kur, paprastai dešinėje)
-        save = cols[14].button("💾", key=f"save_{k[0]}")
+        # ---- Save mygtukas VISADA GALE ----
+        save = cols[15].button("💾", key=f"save_{k[0]}")
         if save:
             jau_irasas = c.execute("""
                 SELECT id FROM vilkiku_darbo_laikai WHERE vilkiko_numeris = ? AND data = ?

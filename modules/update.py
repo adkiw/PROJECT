@@ -108,15 +108,15 @@ def show(conn, c):
         0.45,  # SA
         0.45,  # BDL
         0.45,  # LDL
-        0.8,   # Pakrovimo data (edit)
-        0.5,   # Pakrovimo laikas (edit)
-        0.75,  # Pakrovimo statusas
-        0.8,   # Iškrovimo data (edit)
-        0.5,   # Iškrovimo laikas (edit)
-        0.75,  # Iškrovimo statusas
+        0.8,   # Pakr. data (edit)
+        0.5,   # Pakr. laikas (edit)
+        0.75,  # Pakr. statusas
+        0.8,   # Iškr. data (edit)
+        0.5,   # Iškr. laikas (edit)
+        0.75,  # Iškr. statusas
         1.0,   # Komentaras
-        0.8,   # Ats. transporto vadybininkas
-        0.8    # Ats. ekspedicijos vadybininkas
+        0.8,   # Ats. trans. vadyb.
+        0.8    # Ats. eksped. vadyb.
     ]
     headers = [
         "Save", "Atnaujinta:", "Vilkikas", "Pakr. data", "Pakr. laikas", "Pakrovimo vieta",
@@ -155,8 +155,10 @@ def show(conn, c):
             WHERE vilkiko_numeris = ? AND data = ?
             ORDER BY id DESC LIMIT 1
         """, (k[5], k[3])).fetchone()
+
+        # Ištraukime reikšmes, jei įrašas yra
         sa = darbo[0] if darbo and darbo[0] else ""
-        bdl = darbo[1] if darbo and darba and darbo[1] not in [None, ""] else ""
+        bdl = darbo[1] if darbo and darbo[1] not in [None, ""] else ""     # <-- pataisyta eilutė
         ldl = darbo[2] if darbo and darbo[2] not in [None, ""] else ""
         created = darbo[3] if darbo and darbo[3] else None
 

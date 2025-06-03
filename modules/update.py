@@ -146,36 +146,37 @@ def show(conn, c):
         # Pakrovimo update (viena linija)
         with cols[11]:
             pk_select_cols = st.columns([1.2,1.2,1.3])
-            # 1. Data
-            pk_data_in = pk_select_cols[0].date_input(
-                "", value=pk_data, key=f"pkdata_{k[0]}"
-            )
-            # 2. Laikas
-            pk_laikas_in = pk_select_cols[1].selectbox(
-                "", pk_time_list, index=pk_time_list.index(pk_laikas) if pk_laikas in pk_time_list else 32, key=f"pktime_{k[0]}"
-            )
-            # 3. Statusas
+            # 3. Statusas (svarbiausias, jis valdo ar disabled)
             pk_status_in = pk_select_cols[2].selectbox(
                 "", ["-", "Atvyko", "Pakrauta", "Kita"],
                 index=["-", "Atvyko", "Pakrauta", "Kita"].index(pk_statusas if pk_statusas in ["-", "Atvyko", "Pakrauta", "Kita"] else "-"),
                 key=f"pkstatus_{k[0]}"
             )
+            # 1. Data
+            pk_data_in = pk_select_cols[0].date_input(
+                "", value=pk_data, key=f"pkdata_{k[0]}", disabled=(pk_status_in != "-")
+            )
+            # 2. Laikas
+            pk_laikas_in = pk_select_cols[1].selectbox(
+                "", pk_time_list, index=pk_time_list.index(pk_laikas) if pk_laikas in pk_time_list else 32, key=f"pktime_{k[0]}", disabled=(pk_status_in != "-")
+            )
+
         # Iškrovimo update (viena linija)
         with cols[12]:
             ikr_select_cols = st.columns([1.2,1.2,1.3])
-            # 1. Data
-            ikr_data_in = ikr_select_cols[0].date_input(
-                "", value=ikr_data, key=f"ikrdata_{k[0]}"
-            )
-            # 2. Laikas
-            ikr_laikas_in = ikr_select_cols[1].selectbox(
-                "", ikr_time_list, index=ikr_time_list.index(ikr_laikas) if ikr_laikas in ikr_time_list else 32, key=f"iktime_{k[0]}"
-            )
             # 3. Statusas
             ikr_status_in = ikr_select_cols[2].selectbox(
                 "", ["-", "Atvyko", "Iškrauta", "Kita"],
                 index=["-", "Atvyko", "Iškrauta", "Kita"].index(ikr_statusas if ikr_statusas in ["-", "Atvyko", "Iškrauta", "Kita"] else "-"),
                 key=f"ikrstatus_{k[0]}"
+            )
+            # 1. Data
+            ikr_data_in = ikr_select_cols[0].date_input(
+                "", value=ikr_data, key=f"ikrdata_{k[0]}", disabled=(ikr_status_in != "-")
+            )
+            # 2. Laikas
+            ikr_laikas_in = ikr_select_cols[1].selectbox(
+                "", ikr_time_list, index=ikr_time_list.index(ikr_laikas) if ikr_laikas in ikr_time_list else 32, key=f"iktime_{k[0]}", disabled=(ikr_status_in != "-")
             )
 
         # Komentaras
@@ -195,7 +196,6 @@ def show(conn, c):
 
         # Save mygtukas
         save = cols[15].button("💾", key=f"save_{k[0]}")
-
         if save:
             jau_irasas = c.execute("""
                 SELECT id FROM vilkiku_darbo_laikai WHERE vilkiko_numeris = ? AND data = ?
@@ -211,8 +211,8 @@ def show(conn, c):
                     WHERE id=?
                 """, (
                     darbo_in, likes_in, savaite_in, now_str,
-                    pk_status_in, pk_laikas_in, str(pk_data_in),
-                    ikr_status_in, ikr_laikas_in, str(ikr_data_in),
+                    pk_status_in, pk_laikas_in if pk_status_in == "-" else "", str(pk_data_in) if pk_status_in == "-" else "",
+                    ikr_status_in, ikr_laikas_in if ikr_status_in == "-" else "", str(ikr_data_in) if ikr_status_in == "-" else "",
                     komentaras_in, jau_irasas[0]
                 ))
             else:
@@ -224,8 +224,8 @@ def show(conn, c):
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     k[5], k[3], darbo_in, likes_in, savaite_in, now_str,
-                    pk_status_in, pk_laikas_in, str(pk_data_in),
-                    ikr_status_in, ikr_laikas_in, str(ikr_data_in),
+                    pk_status_in, pk_laikas_in if pk_status_in == "-" else "", str(pk_data_in) if pk_status_in == "-" else "",
+                    ikr_status_in, ikr_laikas_in if ikr_status_in == "-" else "", str(ikr_data_in) if ikr_status_in == "-" else "",
                     komentaras_in
                 ))
             conn.commit()

@@ -82,21 +82,12 @@ def show(conn, c):
     # Užtikrinti laukus DB
     expected = {
         'saskaitos_busena': 'TEXT',
-        'pakrovimo_numeris': 'TEXT',
-        'pakrovimo_laikas_nuo': 'TEXT',
-        'pakrovimo_laikas_iki': 'TEXT',
         'pakrovimo_salis': 'TEXT',
         'pakrovimo_regionas': 'TEXT',
-        'pakrovimo_miestas': 'TEXT',
-        'pakrovimo_adresas': 'TEXT',
         'pakrovimo_data': 'TEXT',
         'iskrovimo_salis': 'TEXT',
         'iskrovimo_regionas': 'TEXT',
-        'iskrovimo_miestas': 'TEXT',
-        'iskrovimo_adresas': 'TEXT',
         'iskrovimo_data': 'TEXT',
-        'iskrovimo_laikas_nuo': 'TEXT',
-        'iskrovimo_laikas_iki': 'TEXT',
         'vilkikas': 'TEXT',
         'priekaba': 'TEXT',
         'atsakingas_vadybininkas': 'TEXT',
@@ -158,8 +149,8 @@ def show(conn, c):
                 busenos.append(get_busena(c, row))
             df["busena"] = busenos
 
-            saraso_stulpeliai = FIELD_ORDER + [c for c in df.columns if c not in FIELD_ORDER]
-            df_disp = df[saraso_stulpeliai].fillna("")
+            # Rodo TIK FIELD_ORDER laukus!
+            df_disp = df[FIELD_ORDER].fillna("")
 
             filter_cols = st.columns(len(df_disp.columns)+1)
             for i, col in enumerate(df_disp.columns):

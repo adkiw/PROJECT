@@ -3,7 +3,7 @@ import pandas as pd
 from datetime import date, time, timedelta
 
 EU_COUNTRIES = [
-    ("", ""), ("Lietuva", "LT"), ("Latvija", "LV"), ("Estija", "EE"), ("Lenkija", "PL"), ("Vokietija", "DE"),
+    ("", ""), ("Lietuva", "LT"), ("Baltarusija", "BY"), ("Latvija", "LV"), ("Lenkija", "PL"), ("Vokietija", "DE"),
     ("Prancūzija", "FR"), ("Ispanija", "ES"), ("Italija", "IT"), ("Olandija", "NL"), ("Belgija", "BE"),
     ("Austrija", "AT"), ("Švedija", "SE"), ("Suomija", "FI"), ("Čekija", "CZ"), ("Slovakija", "SK"),
     ("Vengrija", "HU"), ("Rumunija", "RO"), ("Bulgarija", "BG"), ("Danija", "DK"), ("Norvegija", "NO"),
@@ -14,65 +14,108 @@ EU_COUNTRIES = [
 HEADER_LABELS = {
     "id": "ID",
     "busena": "Būsena",
-    "pakrovimo_data": "Pakr.<br>data",
-    "iskrovimo_data": "Iškr.<br>data",
-    "pakrovimo_salis": "Pakr.<br>šalis",
-    "pakrovimo_regionas": "Pakr.<br>reg.",
-    "pakrovimo_miestas": "Pakr.<br>miest.",
-    "iskrovimo_salis": "Iškr.<br>šalis",
-    "iskrovimo_regionas": "Iškr.<br>reg.",
-    "iskrovimo_miestas": "Iškr.<br>miest.",
+    "pakrovimo_data": "Pakr. data",
+    "iskrovimo_data": "Iškr. data",
+    "pakrovimo_vieta": "Pakr. vieta",
+    "iskrovimo_vieta": "Iškr. vieta",
     "klientas": "Klientas",
     "vilkikas": "Vilkikas",
     "priekaba": "Priekaba",
-    "ekspedicijos_vadybininkas": "Eksp.<br>vadyb.",
-    "transporto_vadybininkas": "Transp.<br>vadyb.",
-    "uzsakymo_numeris": "Užsak.<br>nr.",
+    "ekspedicijos_vadybininkas": "Eksp. vadyb.",
+    "transporto_vadybininkas": "Transp. vadyb.",
+    "atsakingas_vadybininkas": "Atsak. vadyb.",
+    "uzsakymo_numeris": "Užsak. nr.",
     "kilometrai": "Km",
     "frachtas": "Frachtas",
-    "pakrovimo_numeris": "Pakr.<br>nr.",
-    "pakrovimo_laikas_nuo": "Pakr.<br>nuo",
-    "pakrovimo_laikas_iki": "Pakr.<br>iki",
-    "pakrovimo_adresas": "Pakr.<br>adr.",
-    "iskrovimo_adresas": "Iškr.<br>adr.",
-    "iskrovimo_laikas_nuo": "Iškr.<br>nuo",
-    "iskrovimo_laikas_iki": "Iškr.<br>iki",
-    "atsakingas_vadybininkas": "Atsak.<br>vadyb.",
+    "saskaitos_busena": "Sąskaitos būsena",
     "svoris": "Svoris",
-    "paleciu_skaicius": "Pad.<br>sk.",
+    "paleciu_skaicius": "Pad. sk."
 }
 
 FIELD_ORDER = [
-    "id", "busena", "pakrovimo_data", "iskrovimo_data", "pakrovimo_salis", "pakrovimo_regionas",
-    "pakrovimo_miestas", "iskrovimo_salis", "iskrovimo_regionas", "iskrovimo_miestas",
-    "klientas", "vilkikas", "priekaba", "ekspedicijos_vadybininkas", "transporto_vadybininkas",
-    "uzsakymo_numeris", "kilometrai", "frachtas", "pakrovimo_numeris", "pakrovimo_laikas_nuo", "pakrovimo_laikas_iki",
-    "pakrovimo_adresas", "iskrovimo_adresas", "iskrovimo_laikas_nuo", "iskrovimo_laikas_iki",
-    "atsakingas_vadybininkas", "svoris", "paleciu_skaicius"
+    "id", "busena", "pakrovimo_data", "iskrovimo_data",
+    "pakrovimo_vieta", "iskrovimo_vieta",
+    "klientas", "vilkikas", "priekaba", "ekspedicijos_vadybininkas",
+    "transporto_vadybininkas", "atsakingas_vadybininkas",
+    "uzsakymo_numeris", "kilometrai", "frachtas",
+    "saskaitos_busena", "svoris", "paleciu_skaicius"
 ]
+
+def get_busena(c, krovinys):
+    if not krovinys.get("vilkikas"):
+        return "Nesuplanuotas"
+    if krovinys.get("vilkikas") == "":
+        return "Nesuplanuotas"
+    busena = "Suplanuotas"
+    r = c.execute("""
+        SELECT pakrovimo_statusas, iskrovimo_statusas
+        FROM vilkiku_darbo_laikai
+        WHERE vilkiko_numeris = ? AND data = ?
+        ORDER BY id DESC LIMIT 1
+    """, (krovinys['vilkikas'], krovinys['pakrovimo_data'])).fetchone()
+    if not r:
+        return busena
+    pk_status, ik_status = r
+    if ik_status == "Iškrauta":
+        return "Iškrauta"
+    if ik_status == "Atvyko":
+        return "Atvyko į iškrovimą"
+    if ik_status == "Kita" and pk_status != "Pakrauta":
+        return "Kita (iškrovimas)"
+    if pk_status == "Pakrauta":
+        return "Pakrauta"
+    if pk_status == "Atvyko":
+        return "Atvyko į pakrovimą"
+    if pk_status == "Kita":
+        return "Kita (pakrovimas)"
+    return busena
+
+def get_vieta(salis, regionas):
+    if not salis:
+        return ""
+    return f"{salis}{regionas or ''}"
 
 def show(conn, c):
     st.title("Užsakymų valdymas")
     add_clicked = st.button("➕ Pridėti naują krovinį", use_container_width=True)
 
     # Užtikrinti laukus DB
-    existing = [r[1] for r in c.execute("PRAGMA table_info(kroviniai)").fetchall()]
-    extras = {k: "TEXT" for k in [
-        "pakrovimo_numeris", "pakrovimo_laikas_nuo", "pakrovimo_laikas_iki", "pakrovimo_salis", "pakrovimo_regionas",
-        "pakrovimo_miestas", "pakrovimo_adresas", "pakrovimo_data", "iskrovimo_salis", "iskrovimo_regionas",
-        "iskrovimo_miestas", "iskrovimo_adresas", "iskrovimo_data", "iskrovimo_laikas_nuo", "iskrovimo_laikas_iki",
-        "vilkikas", "priekaba", "atsakingas_vadybininkas", "ekspedicijos_vadybininkas", "transporto_vadybininkas"
-    ]}
-    extras.update({"kilometrai": "INTEGER", "frachtas": "REAL", "svoris": "INTEGER", "paleciu_skaicius": "INTEGER", "busena": "TEXT"})
-    for col, typ in extras.items():
+    expected = {
+        'saskaitos_busena': 'TEXT',
+        'pakrovimo_numeris': 'TEXT',
+        'pakrovimo_laikas_nuo': 'TEXT',
+        'pakrovimo_laikas_iki': 'TEXT',
+        'pakrovimo_salis': 'TEXT',
+        'pakrovimo_regionas': 'TEXT',
+        'pakrovimo_miestas': 'TEXT',
+        'pakrovimo_adresas': 'TEXT',
+        'pakrovimo_data': 'TEXT',
+        'iskrovimo_salis': 'TEXT',
+        'iskrovimo_regionas': 'TEXT',
+        'iskrovimo_miestas': 'TEXT',
+        'iskrovimo_adresas': 'TEXT',
+        'iskrovimo_data': 'TEXT',
+        'iskrovimo_laikas_nuo': 'TEXT',
+        'iskrovimo_laikas_iki': 'TEXT',
+        'vilkikas': 'TEXT',
+        'priekaba': 'TEXT',
+        'atsakingas_vadybininkas': 'TEXT',
+        'ekspedicijos_vadybininkas': 'TEXT',
+        'transporto_vadybininkas': 'TEXT',
+        'kilometrai': 'INTEGER',
+        'frachtas': 'REAL',
+        'svoris': 'INTEGER',
+        'paleciu_skaicius': 'INTEGER',
+        'busena': 'TEXT'
+    }
+    c.execute("PRAGMA table_info(kroviniai)")
+    existing = {r[1] for r in c.fetchall()}
+    for col, typ in expected.items():
         if col not in existing:
             c.execute(f"ALTER TABLE kroviniai ADD COLUMN {col} {typ}")
     conn.commit()
 
-    # ---- Duomenų pasirinkimai ----
     klientai = [r[0] for r in c.execute("SELECT pavadinimas FROM klientai").fetchall()]
-
-    # Jeigu nėra klientų
     if len(klientai) == 0:
         st.warning("Nėra nė vieno kliento! Pridėkite klientą modulyje **Klientai** ir grįžkite čia.")
         return
@@ -85,9 +128,6 @@ def show(conn, c):
     eksped_dropdown = [""] + eksped_vadybininkai
     vilkikai_df = pd.read_sql_query("SELECT numeris, vadybininkas FROM vilkikai", conn)
     vilk_vad_map = {r['numeris']: r['vadybininkas'] for _, r in vilkikai_df.iterrows()}
-    busena_opt = [r[0] for r in c.execute("SELECT reiksme FROM lookup WHERE kategorija = ?", ("busena",)).fetchall()]
-    if not busena_opt:
-        busena_opt = ["suplanuotas", "nesuplanuotas", "pakrautas", "iškrautas"]
     df_klientai = pd.read_sql_query("SELECT pavadinimas, likes_limitas FROM klientai", conn)
     klientu_limitai = {row['pavadinimas']: row['likes_limitas'] for _, row in df_klientai.iterrows()}
 
@@ -103,27 +143,28 @@ def show(conn, c):
     def edit_cargo(cid): st.session_state['selected_cargo'] = cid
     sel = st.session_state['selected_cargo']
 
-    # --- Sąrašas ---
     if sel is None:
         df = pd.read_sql_query("SELECT * FROM kroviniai", conn)
         if df.empty:
             st.info("Kol kas nėra krovinių.")
         else:
+            # Tik dvi vietos
+            df["pakrovimo_vieta"] = df.apply(lambda r: get_vieta(r['pakrovimo_salis'], r['pakrovimo_regionas']), axis=1)
+            df["iskrovimo_vieta"] = df.apply(lambda r: get_vieta(r['iskrovimo_salis'], r['iskrovimo_regionas']), axis=1)
             df["transporto_vadybininkas"] = df["vilkikas"].map(vilk_vad_map).fillna("")
-            papildomi = [c for c in df.columns if c not in FIELD_ORDER]
-            saraso_stulpeliai = FIELD_ORDER + papildomi
+            df["atsakingas_vadybininkas"] = df["vilkikas"].map(vilk_vad_map).fillna("")
+            busenos = []
+            for _, row in df.iterrows():
+                busenos.append(get_busena(c, row))
+            df["busena"] = busenos
+
+            saraso_stulpeliai = FIELD_ORDER + [c for c in df.columns if c not in FIELD_ORDER]
             df_disp = df[saraso_stulpeliai].fillna("")
-            st.markdown("""
-            <style>
-            .st-emotion-cache-1avcm0n {min-width: 1850px;}
-            .stDataFrame thead tr th { white-space:pre-line; }
-            </style>
-            """, unsafe_allow_html=True)
 
             filter_cols = st.columns(len(df_disp.columns)+1)
             for i, col in enumerate(df_disp.columns):
                 filter_cols[i].text_input(
-                    " ",  # tuščias, bet ' ' leidžia
+                    " ",
                     key=f"f_{col}",
                     label_visibility="collapsed"
                 )
@@ -134,7 +175,6 @@ def show(conn, c):
                 v = st.session_state.get(f"f_{col}","")
                 if v:
                     df_f = df_f[df_f[col].astype(str).str.contains(v, case=False, na=False)]
-
             hdr = st.columns(len(df_disp.columns)+1)
             for i, col in enumerate(df_disp.columns):
                 label = HEADER_LABELS.get(col, col.replace("_", "<br>")[:14])
@@ -150,7 +190,7 @@ def show(conn, c):
                               file_name="kroviniai.csv", mime="text/csv")
         return
 
-    # --- Forma ---
+    # Forma
     is_new = (sel == 0)
     data = {} if is_new else pd.read_sql_query("SELECT * FROM kroviniai WHERE id=?", conn, params=(sel,)).iloc[0]
     if not is_new and data.empty:
@@ -165,8 +205,6 @@ def show(conn, c):
         limito_likutis = klientu_limitai.get(klientas, "")
         if klientas: colA.info(f"Limito likutis: {limito_likutis}")
         uzsak = colA.text_input("Užsakymo nr.", value=("" if is_new else data.get('uzsakymo_numeris','')), key="kl_uzsak")
-        bus_idx = 0 if is_new or data.get('busena') not in busena_opt else busena_opt.index(data['busena'])
-        bus = colA.selectbox("Būsena", busena_opt, index=bus_idx, key="cr_busena")
         eksped_val = ("" if is_new else data.get('ekspedicijos_vadybininkas', ""))
         eksped_idx = eksped_dropdown.index(eksped_val) if eksped_val in eksped_dropdown else 0
         eksped_vad = colA.selectbox("Ekspedicijos vadybininkas", eksped_dropdown, index=eksped_idx, key="eksped_vad")
@@ -211,6 +249,10 @@ def show(conn, c):
         sv = colD.text_input("Svoris (kg)", value=("" if is_new else str(data.get('svoris',0))), key="cr_sv")
         pal = colD.text_input("Padėklų sk.", value=("" if is_new else str(data.get('paleciu_skaicius',0))), key="cr_pal")
 
+        sask_busenos = ["Neapmokėta", "Apmokėta"]
+        sask_busena_val = sask_busenos[0] if is_new else data.get("saskaitos_busena", sask_busenos[0])
+        sask_busena = colD.selectbox("Sąskaitos būsena", sask_busenos, index=sask_busenos.index(sask_busena_val), key="sask_busena")
+
         save = st.form_submit_button("💾 Išsaugoti")
         back = st.form_submit_button("🔙 Grįžti į sąrašą", on_click=clear_sel)
     if save:
@@ -249,7 +291,7 @@ def show(conn, c):
                 'frachtas': frachtas_float,
                 'svoris': int(sv or 0),
                 'paleciu_skaicius': int(pal or 0),
-                'busena': bus
+                'saskaitos_busena': sask_busena,
             }
             try:
                 if is_new:

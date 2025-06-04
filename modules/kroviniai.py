@@ -27,9 +27,7 @@ HEADER_LABELS = {
     "uzsakymo_numeris": "Užsak. nr.",
     "kilometrai": "Km",
     "frachtas": "Frachtas",
-    "saskaitos_busena": "Sąskaitos būsena",
-    "svoris": "Svoris",
-    "paleciu_skaicius": "Pad. sk."
+    "saskaitos_busena": "Sąskaitos būsena"
 }
 
 FIELD_ORDER = [

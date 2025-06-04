@@ -1,8 +1,6 @@
 import streamlit as st
 import pandas as pd
 
-# modules/klientai.py
-
 def show(conn, c):
     # 1. Ensure required columns exist
     expected = {
@@ -39,7 +37,7 @@ def show(conn, c):
         st.session_state.selected_client = cid
 
     # 2. Title + Add button
-    title_col, add_col = st.columns([9,1])
+    title_col, add_col = st.columns([9, 1])
     title_col.title("DISPO – Klientai")
     add_col.button("➕ Pridėti naują klientą", on_click=start_new)
 
@@ -68,7 +66,7 @@ def show(conn, c):
         for i, col in enumerate(df.columns):
             hdr[i].markdown(f"**{col}**")
         hdr[-1].markdown("**Veiksmai**")
-        # Data rows with 1cm spacing
+        # Data rows with spacing
         for _, row in df.iterrows():
             row_cols = st.columns(len(df.columns) + 1)
             for i, col in enumerate(df.columns):
@@ -91,53 +89,176 @@ def show(conn, c):
             return
         cli = df_cli.iloc[0]
 
-    # 6. Fields: pervadinta "Likes limitas" į "Limito likutis"
-    fields = [
-        ("Įmonės pavadinimas",        "pavadinimas"),
-        ("PVM/VAT numeris",           "vat_numeris"),
-        ("Kontaktinis asmuo",         "kontaktinis_asmuo"),
-        ("Kontaktinis el. paštas",    "kontaktinis_el_pastas"),
-        ("Kontaktinis tel. nr",       "kontaktinis_tel"),
-        ("Šalis",                     "salis"),
-        ("Regionas",                  "regionas"),
-        ("Miestas",                   "miestas"),
-        ("Adresas",                   "adresas"),
-        ("Sąskaitų kontaktinis asmuo","saskaitos_asmuo"),
-        ("Sąskaitų el. paštas",      "saskaitos_el_pastas"),
-        ("Sąskaitų tel. nr",         "saskaitos_tel"),
-        ("COFACE limitas",            "coface_limitas"),
-        ("Mūsų limitas",              "musu_limitas"),
-        ("Limito likutis",            "likes_limitas"),   # <- pervadinta čia
-    ]
-    limit_keys = {"coface_limitas","musu_limitas","likes_limitas"}
+    st.markdown("### Kliento duomenys")
+    # For new client with existing VAT, prefill COFACE limit and compute others
+    existing_vats = {
+        row['vat_numeris']: row['coface_limitas']
+        for _, row in pd.read_sql("SELECT vat_numeris, coface_limitas FROM klientai", conn).iterrows()
+        if row['vat_numeris']
+    }
 
-    # 6. Form fields
-    for i in range(0, len(fields), 3):
-        cols = st.columns(3)
-        for j, (label, key) in enumerate(fields[i:i+3]):
-            default = "" if is_new else cli.get(key, "")
-            cols[j].text_input(label, key=key, value=str(default))
+    # 6. Form fields (VAT required; COFACE limit manual)
+    col1, col2 = st.columns(2)
+    with st.form("client_form", clear_on_submit=False):
+        pavadinimas = col1.text_input(
+            "Įmonės pavadinimas",
+            value=("" if is_new else cli.get("pavadinimas", "")),
+            key="pavadinimas"
+        )
+        vat_default = "" if is_new else cli.get("vat_numeris", "")
+        vat_numeris = col1.text_input(
+            "PVM/VAT numeris *",
+            value=vat_default,
+            key="vat_numeris"
+        )
+        kontaktinis_asmuo = col1.text_input(
+            "Kontaktinis asmuo",
+            value=("" if is_new else cli.get("kontaktinis_asmuo", "")),
+            key="kontaktinis_asmuo"
+        )
+        kontaktinis_el_pastas = col1.text_input(
+            "Kontaktinis el. paštas",
+            value=("" if is_new else cli.get("kontaktinis_el_pastas", "")),
+            key="kontaktinis_el_pastas"
+        )
+        kontaktinis_tel = col1.text_input(
+            "Kontaktinis tel. nr",
+            value=("" if is_new else cli.get("kontaktinis_tel", "")),
+            key="kontaktinis_tel"
+        )
+        salis = col1.text_input(
+            "Šalis",
+            value=("" if is_new else cli.get("salis", "")),
+            key="salis"
+        )
+        regionas = col1.text_input(
+            "Regionas",
+            value=("" if is_new else cli.get("regionas", "")),
+            key="regionas"
+        )
+        miestas = col1.text_input(
+            "Miestas",
+            value=("" if is_new else cli.get("miestas", "")),
+            key="miestas"
+        )
+        adresas = col1.text_input(
+            "Adresas",
+            value=("" if is_new else cli.get("adresas", "")),
+            key="adresas"
+        )
 
-    # 7. Save / Back
-    def do_save():
-        vals = []
-        for _, key in fields:
-            v = st.session_state[key]
-            if key in limit_keys:
-                v = float(v) if v else 0.0
-            vals.append(v)
-        if is_new:
-            cols_sql = ", ".join(k for _, k in fields)
-            ph = ", ".join("?" for _ in fields)
-            c.execute(f"INSERT INTO klientai ({cols_sql}) VALUES ({ph})", tuple(vals))
-        else:
-            vals.append(sel)
-            sc = ", ".join(f"{k}=?" for _, k in fields)
-            c.execute(f"UPDATE klientai SET {sc} WHERE id=?", tuple(vals))
-        conn.commit()
-        st.success("✅ Duomenys įrašyti.")
-        clear_selection()
+        saskaitos_asmuo = col2.text_input(
+            "Sąskaitų kontaktinis asmuo",
+            value=("" if is_new else cli.get("saskaitos_asmuo", "")),
+            key="saskaitos_asmuo"
+        )
+        saskaitos_el_pastas = col2.text_input(
+            "Sąskaitų el. paštas",
+            value=("" if is_new else cli.get("saskaitos_el_pastas", "")),
+            key="saskaitos_el_pastas"
+        )
+        saskaitos_tel = col2.text_input(
+            "Sąskaitų tel. nr",
+            value=("" if is_new else cli.get("saskaitos_tel", "")),
+            key="saskaitos_tel"
+        )
 
-    btn_save, btn_back = st.columns(2)
-    btn_save.button("💾 Išsaugoti klientą", on_click=do_save)
-    btn_back.button("🔙 Grįžti į sąrašą", on_click=clear_selection)
+        # If VAT already exists, prefill COFACE limit
+        coface_prefill = ""
+        if is_new and vat_default == "" and st.session_state.get("vat_numeris", "") in existing_vats:
+            coface_prefill = str(existing_vats[st.session_state["vat_numeris"]])
+        elif not is_new:
+            coface_prefill = str(cli.get("coface_limitas", ""))
+
+        coface_limitas = col2.text_input(
+            "COFACE limitas",
+            value=coface_prefill,
+            key="coface_limitas"
+        )
+
+        # Compute "Mūsų limitas" and "Limito likutis" (read-only display)
+        def compute_limits(vat, coface):
+            try:
+                coface_val = float(coface)
+            except:
+                return "", ""
+            musu = coface_val / 3.0
+            # Sum of unpaid "frachtas" for this VAT across all clients
+            r = c.execute("""
+                SELECT SUM(k.frachtas) 
+                FROM kroviniai AS k
+                JOIN klientai AS cl ON k.klientas = cl.pavadinimas
+                WHERE cl.vat_numeris = ? 
+                  AND k.saskaitos_busena != 'Apmokėta'
+            """, (vat,)).fetchone()
+            unpaid_sum = r[0] if r and r[0] is not None else 0.0
+            liks = musu - unpaid_sum
+            if liks < 0:
+                liks = 0.0
+            return round(musu, 2), round(liks, 2)
+
+        musu_limitas_display = ""
+        liks_display = ""
+        if st.session_state.get("vat_numeris", "") and st.session_state.get("coface_limitas", ""):
+            m, l = compute_limits(st.session_state["vat_numeris"], st.session_state["coface_limitas"])
+            musu_limitas_display = str(m)
+            liks_display = str(l)
+
+        col2.markdown(f"**Mūsų limitas (COFACE/3):** {musu_limitas_display}")
+        col2.markdown(f"**Limito likutis:** {liks_display}")
+
+        save = st.form_submit_button("💾 Išsaugoti")
+        back = st.form_submit_button("🔙 Grįžti į sąrašą", on_click=clear_selection)
+
+    # 7. Save / Back logic
+    if save:
+        # Validation: VAT required
+        if not st.session_state["vat_numeris"].strip():
+            st.error("❌ PVM/VAT numeris yra privalomas.")
+            return
+
+        # Convert COFACE to float
+        try:
+            coface_val = float(st.session_state["coface_limitas"])
+        except:
+            st.error("❌ Netinkamas COFACE limitas. Įveskite skaičių.")
+            return
+
+        # Compute Mūsų limitas ir likutis
+        musu_limitas_calc, liks_calc = compute_limits(
+            st.session_state["vat_numeris"], 
+            st.session_state["coface_limitas"]
+        )
+
+        vals = {
+            'pavadinimas':         st.session_state["pavadinimas"],
+            'vat_numeris':         st.session_state["vat_numeris"],
+            'kontaktinis_asmuo':   st.session_state["kontaktinis_asmuo"],
+            'kontaktinis_el_pastas':st.session_state["kontaktinis_el_pastas"],
+            'kontaktinis_tel':     st.session_state["kontaktinis_tel"],
+            'salis':               st.session_state["salis"],
+            'regionas':            st.session_state["regionas"],
+            'miestas':             st.session_state["miestas"],
+            'adresas':             st.session_state["adresas"],
+            'saskaitos_asmuo':     st.session_state["saskaitos_asmuo"],
+            'saskaitos_el_pastas': st.session_state["saskaitos_el_pastas"],
+            'saskaitos_tel':       st.session_state["saskaitos_tel"],
+            'coface_limitas':      coface_val,
+            'musu_limitas':        musu_limitas_calc,
+            'likes_limitas':       liks_calc
+        }
+
+        try:
+            if is_new:
+                cols_sql = ", ".join(vals.keys())
+                ph = ", ".join("?" for _ in vals)
+                c.execute(f"INSERT INTO klientai ({cols_sql}) VALUES ({ph})", tuple(vals.values()))
+            else:
+                vals_list = list(vals.values()) + [sel]
+                sc = ", ".join(f"{k}=?" for k in vals.keys())
+                c.execute(f"UPDATE klientai SET {sc} WHERE id=?", tuple(vals_list))
+            conn.commit()
+            st.success("✅ Duomenys įrašyti.")
+            clear_selection()
+        except Exception as e:
+            st.error(f"❌ Klaida: {e}")

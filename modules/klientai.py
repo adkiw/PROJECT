@@ -90,12 +90,24 @@ def show(conn, c):
         cli = df_cli.iloc[0]
 
     st.markdown("### Kliento duomenys")
-    # For new client with existing VAT, prefill COFACE limit and compute others
-    existing_vats = {
-        row['vat_numeris']: row['coface_limitas']
-        for _, row in pd.read_sql("SELECT vat_numeris, coface_limitas FROM klientai", conn).iterrows()
-        if row['vat_numeris']
-    }
+
+    # Build dict of existing VAT→COFACE for prefill
+    existing_vats = {}
+    try:
+        for _, row in pd.read_sql("SELECT vat_numeris, coface_limitas FROM klientai", conn).iterrows():
+            if row['vat_numeris']:
+                existing_vats[row['vat_numeris']] = row['coface_limitas']
+    except:
+        # If klientai table is very new, ignore
+        existing_vats = {}
+
+    # Helper: check if table exists
+    def table_exists(table_name: str) -> bool:
+        r = c.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (table_name,)
+        ).fetchone()
+        return r is not None
 
     # 6. Form fields (VAT required; COFACE limit manual)
     col1, col2 = st.columns(2)
@@ -177,21 +189,29 @@ def show(conn, c):
         )
 
         # Compute "Mūsų limitas" and "Limito likutis" (read-only display)
-        def compute_limits(vat, coface):
+        def compute_limits(vat: str, coface: str):
             try:
                 coface_val = float(coface)
             except:
                 return "", ""
             musu = coface_val / 3.0
-            # Sum of unpaid "frachtas" for this VAT across all clients
-            r = c.execute("""
-                SELECT SUM(k.frachtas) 
-                FROM kroviniai AS k
-                JOIN klientai AS cl ON k.klientas = cl.pavadinimas
-                WHERE cl.vat_numeris = ? 
-                  AND k.saskaitos_busena != 'Apmokėta'
-            """, (vat,)).fetchone()
-            unpaid_sum = r[0] if r and r[0] is not None else 0.0
+
+            # Only attempt to sum if 'kroviniai' table exists and has needed columns
+            unpaid_sum = 0.0
+            if table_exists("kroviniai"):
+                try:
+                    r = c.execute("""
+                        SELECT SUM(k.frachtas)
+                        FROM kroviniai AS k
+                        JOIN klientai AS cl ON k.klientas = cl.pavadinimas
+                        WHERE cl.vat_numeris = ?
+                          AND k.saskaitos_busena != 'Apmokėta'
+                    """, (vat,)).fetchone()
+                    if r and r[0] is not None:
+                        unpaid_sum = r[0]
+                except:
+                    unpaid_sum = 0.0
+
             liks = musu - unpaid_sum
             if liks < 0:
                 liks = 0.0
@@ -226,7 +246,7 @@ def show(conn, c):
 
         # Compute Mūsų limitas ir likutis
         musu_limitas_calc, liks_calc = compute_limits(
-            st.session_state["vat_numeris"], 
+            st.session_state["vat_numeris"],
             st.session_state["coface_limitas"]
         )
 

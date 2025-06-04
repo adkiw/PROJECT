@@ -90,24 +90,12 @@ def show(conn, c):
         cli = df_cli.iloc[0]
 
     st.markdown("### Kliento duomenys")
-
-    # Build dict of existing VAT→COFACE for prefill
-    existing_vats = {}
-    try:
-        for _, row in pd.read_sql("SELECT vat_numeris, coface_limitas FROM klientai", conn).iterrows():
-            if row['vat_numeris']:
-                existing_vats[row['vat_numeris']] = row['coface_limitas']
-    except:
-        # If klientai table is very new, ignore
-        existing_vats = {}
-
-    # Helper: check if table exists
-    def table_exists(table_name: str) -> bool:
-        r = c.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-            (table_name,)
-        ).fetchone()
-        return r is not None
+    # Build a map of existing VAT → coface_limitas
+    existing_vats = {
+        row['vat_numeris']: row['coface_limitas']
+        for _, row in pd.read_sql("SELECT vat_numeris, coface_limitas FROM klientai", conn).iterrows()
+        if row['vat_numeris']
+    }
 
     # 6. Form fields (VAT required; COFACE limit manual)
     col1, col2 = st.columns(2)
@@ -175,7 +163,7 @@ def show(conn, c):
             key="saskaitos_tel"
         )
 
-        # If VAT already exists, prefill COFACE limit
+        # If VAT already exists and this is a new client, prefill COFACE limit
         coface_prefill = ""
         if is_new and vat_default == "" and st.session_state.get("vat_numeris", "") in existing_vats:
             coface_prefill = str(existing_vats[st.session_state["vat_numeris"]])
@@ -189,29 +177,28 @@ def show(conn, c):
         )
 
         # Compute "Mūsų limitas" and "Limito likutis" (read-only display)
-        def compute_limits(vat: str, coface: str):
+        def compute_limits(vat, coface):
             try:
                 coface_val = float(coface)
             except:
                 return "", ""
             musu = coface_val / 3.0
-
-            # Only attempt to sum if 'kroviniai' table exists and has needed columns
-            unpaid_sum = 0.0
-            if table_exists("kroviniai"):
+            # If kroviniai table does not exist yet, unpaid_sum = 0
+            c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='kroviniai'")
+            if not c.fetchone():
+                unpaid_sum = 0.0
+            else:
                 try:
                     r = c.execute("""
-                        SELECT SUM(k.frachtas)
+                        SELECT SUM(k.frachtas) 
                         FROM kroviniai AS k
                         JOIN klientai AS cl ON k.klientas = cl.pavadinimas
-                        WHERE cl.vat_numeris = ?
+                        WHERE cl.vat_numeris = ? 
                           AND k.saskaitos_busena != 'Apmokėta'
                     """, (vat,)).fetchone()
-                    if r and r[0] is not None:
-                        unpaid_sum = r[0]
+                    unpaid_sum = r[0] if r and r[0] is not None else 0.0
                 except:
                     unpaid_sum = 0.0
-
             liks = musu - unpaid_sum
             if liks < 0:
                 liks = 0.0
@@ -244,9 +231,9 @@ def show(conn, c):
             st.error("❌ Netinkamas COFACE limitas. Įveskite skaičių.")
             return
 
-        # Compute Mūsų limitas ir likutis
+        # Compute Mūsų limitas ir limito likutis for this VAT
         musu_limitas_calc, liks_calc = compute_limits(
-            st.session_state["vat_numeris"],
+            st.session_state["vat_numeris"], 
             st.session_state["coface_limitas"]
         )
 
@@ -278,7 +265,39 @@ def show(conn, c):
                 sc = ", ".join(f"{k}=?" for k in vals.keys())
                 c.execute(f"UPDATE klientai SET {sc} WHERE id=?", tuple(vals_list))
             conn.commit()
-            st.success("✅ Duomenys įrašyti.")
+
+            # 8. After saving or updating, update all clients with same VAT:
+            vat = st.session_state["vat_numeris"]
+            # Recompute unpaid fracht sum for this VAT
+            c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='kroviniai'")
+            if not c.fetchone():
+                unpaid_total = 0.0
+            else:
+                try:
+                    r2 = c.execute("""
+                        SELECT SUM(k.frachtas)
+                        FROM kroviniai AS k
+                        JOIN klientai AS cl ON k.klientas = cl.pavadinimas
+                        WHERE cl.vat_numeris = ?
+                          AND k.saskaitos_busena != 'Apmokėta'
+                    """, (vat,)).fetchone()
+                    unpaid_total = r2[0] if r2 and r2[0] is not None else 0.0
+                except:
+                    unpaid_total = 0.0
+            new_musu = coface_val / 3.0
+            new_liks = new_musu - unpaid_total
+            if new_liks < 0:
+                new_liks = 0.0
+
+            # Update všetky rows where vat_numeris = vat
+            c.execute("""
+                UPDATE klientai
+                SET coface_limitas = ?, musu_limitas = ?, likes_limitas = ?
+                WHERE vat_numeris = ?
+            """, (coface_val, new_musu, new_liks, vat))
+            conn.commit()
+
+            st.success("✅ Duomenys įrašyti ir limitai atnaujinti visiems su tuo pačiu VAT numeriu.")
             clear_selection()
         except Exception as e:
             st.error(f"❌ Klaida: {e}")

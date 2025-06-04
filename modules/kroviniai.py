@@ -14,25 +14,22 @@ EU_COUNTRIES = [
 HEADER_LABELS = {
     "id": "ID",
     "busena": "Būsena",
-    "pakrovimo_data": "Pakr.<br>data",
-    "iskrovimo_data": "Iškr.<br>data",
+    "pakrovimo_data": "Pakr. data",
+    "iskrovimo_data": "Iškr. data",
     "pakrovimo_vieta": "Pakr. vieta",
     "iskrovimo_vieta": "Iškr. vieta",
     "klientas": "Klientas",
     "vilkikas": "Vilkikas",
     "priekaba": "Priekaba",
-    "ekspedicijos_vadybininkas": "Eksp.<br>vadyb.",
-    "transporto_vadybininkas": "Transp.<br>vadyb.",
-    "uzsakymo_numeris": "Užsak.<br>nr.",
+    "ekspedicijos_vadybininkas": "Eksp. vadyb.",
+    "transporto_vadybininkas": "Transp. vadyb.",
+    "atsakingas_vadybininkas": "Atsak. vadyb.",
+    "uzsakymo_numeris": "Užsak. nr.",
     "kilometrai": "Km",
     "frachtas": "Frachtas",
-    "pakrovimo_numeris": "Pakr.<br>nr.",
-    "pakrovimo_laikas_nuo": "Pakr.<br>nuo",
-    "pakrovimo_laikas_iki": "Pakr.<br>iki",
-    "atsakingas_vadybininkas": "Atsak.<br>vadyb.",
-    "saskaitos_busena": "Sąskaitos<br>būsena",
+    "saskaitos_busena": "Sąskaitos būsena",
     "svoris": "Svoris",
-    "paleciu_skaicius": "Pad.<br>sk.",
+    "paleciu_skaicius": "Pad. sk."
 }
 
 FIELD_ORDER = [
@@ -79,13 +76,6 @@ def get_vieta(salis, regionas):
     return f"{salis}{regionas or ''}"
 
 def show(conn, c):
-    st.markdown("""
-    <style>
-        .stDataFrame {overflow-x: auto;}
-        .stDataFrame div[data-testid="stHorizontalBlock"] {overflow-x: auto;}
-    </style>
-    """, unsafe_allow_html=True)
-
     st.title("Užsakymų valdymas")
     add_clicked = st.button("➕ Pridėti naują krovinį", use_container_width=True)
 
@@ -158,7 +148,7 @@ def show(conn, c):
         if df.empty:
             st.info("Kol kas nėra krovinių.")
         else:
-            # Dinaminės vietos sujungimas ir busenos
+            # Tik dvi vietos
             df["pakrovimo_vieta"] = df.apply(lambda r: get_vieta(r['pakrovimo_salis'], r['pakrovimo_regionas']), axis=1)
             df["iskrovimo_vieta"] = df.apply(lambda r: get_vieta(r['iskrovimo_salis'], r['iskrovimo_regionas']), axis=1)
             df["transporto_vadybininkas"] = df["vilkikas"].map(vilk_vad_map).fillna("")
@@ -171,7 +161,6 @@ def show(conn, c):
             saraso_stulpeliai = FIELD_ORDER + [c for c in df.columns if c not in FIELD_ORDER]
             df_disp = df[saraso_stulpeliai].fillna("")
 
-            st.dataframe(df_disp, use_container_width=True)
             filter_cols = st.columns(len(df_disp.columns)+1)
             for i, col in enumerate(df_disp.columns):
                 filter_cols[i].text_input(
@@ -260,7 +249,6 @@ def show(conn, c):
         sv = colD.text_input("Svoris (kg)", value=("" if is_new else str(data.get('svoris',0))), key="cr_sv")
         pal = colD.text_input("Padėklų sk.", value=("" if is_new else str(data.get('paleciu_skaicius',0))), key="cr_pal")
 
-        # Nauja: Saskaitos busena
         sask_busenos = ["Neapmokėta", "Apmokėta"]
         sask_busena_val = sask_busenos[0] if is_new else data.get("saskaitos_busena", sask_busenos[0])
         sask_busena = colD.selectbox("Sąskaitos būsena", sask_busenos, index=sask_busenos.index(sask_busena_val), key="sask_busena")
@@ -304,7 +292,6 @@ def show(conn, c):
                 'svoris': int(sv or 0),
                 'paleciu_skaicius': int(pal or 0),
                 'saskaitos_busena': sask_busena,
-                # 'busena' neįrašoma ranka
             }
             try:
                 if is_new:

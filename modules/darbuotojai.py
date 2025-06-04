@@ -1,8 +1,10 @@
+# modules/darbuotojai.py
+
 import streamlit as st
 import pandas as pd
 
 def show(conn, c):
-    # Callbacks
+    # Callback’ai
     def clear_selection():
         st.session_state.selected_emp = None
     def start_new():
@@ -10,16 +12,16 @@ def show(conn, c):
     def start_edit(emp_id):
         st.session_state.selected_emp = emp_id
 
-    # Title + Add New button
+    # Antraštė + „Pridėti naują darbuotoją“ mygtukas
     title_col, add_col = st.columns([9,1])
     title_col.title("DISPO – Darbuotojai")
     add_col.button("➕ Pridėti naują darbuotoją", on_click=start_new)
 
-    # Init selection state
+    # Inicializuojame būseną
     if 'selected_emp' not in st.session_state:
         st.session_state.selected_emp = None
 
-    # 1. LIST VIEW with filters
+    # 1. SĄRAŠO rodinys su filtravimu
     if st.session_state.selected_emp is None:
         df = pd.read_sql(
             "SELECT id, vardas, pavarde, pareigybe, el_pastas, telefonas, grupe FROM darbuotojai",
@@ -49,10 +51,10 @@ def show(conn, c):
             )
         return
 
-    # 2. DETAIL / NEW FORM VIEW
+    # 2. DETALĖS / NAUJAS DARBUOTOJAS
     sel = st.session_state.selected_emp
     is_new = (sel == 0)
-    cli = {}
+    emp_data = {}
     if not is_new:
         df_emp = pd.read_sql(
             "SELECT * FROM darbuotojai WHERE id=?", conn,
@@ -62,63 +64,64 @@ def show(conn, c):
             st.error("Darbuotojas nerastas.")
             clear_selection()
             return
-        cli = df_emp.iloc[0]
+        emp_data = df_emp.iloc[0]
 
-    # Dropdown variantai
+    # Paruošiame pareigybių sąrašą
     pareigybes = ["Ekspedicijos vadybininkas", "Transporto vadybininkas"]
-    grupes = {
-        "Ekspedicijos vadybininkas": ["EKSP1", "EKSP2", "EKSP3", "EKSP4", "EKSP5"],
-        "Transporto vadybininkas": ["TR1", "TR2", "TR3", "TR4", "TR5"]
-    }
+    # Iš DB gauname visų grupių sąrašą
+    all_grupes_df = pd.read_sql_query("SELECT numeris FROM grupes ORDER BY numeris", conn)
+    all_grupes = all_grupes_df["numeris"].tolist()
 
-    # Form fields
-    fields = [
-        ("Vardas", "vardas"),
-        ("Pavardė", "pavarde"),
-        # Pareigybė su dropdown
-        ("Pareigybė", "pareigybe"),
-        ("El. paštas", "el_pastas"),
-        ("Telefonas", "telefonas"),
-        # Grupė su dropdown (dinaminis)
-        ("Grupė", "grupe"),
-    ]
+    # Padalijame pagal prefiksą
+    ekspedicijos_gr = [g for g in all_grupes if g.upper().startswith("EKSP")]
+    transporto_gr  = [g for g in all_grupes if g.upper().startswith("TR")]
 
-    # -- Formos renderinimas su custom dropdownais --
+    # Forma:
     cols1 = st.columns(3)
     cols2 = st.columns(3)
-    # Vardas
-    cols1[0].text_input("Vardas", key="vardas", value=("" if is_new else cli.get("vardas", "")))
-    # Pavardė
-    cols1[1].text_input("Pavardė", key="pavarde", value=("" if is_new else cli.get("pavarde", "")))
-    # Pareigybė - selectbox
+
+    # 1) Vardas
+    cols1[0].text_input("Vardas", key="vardas", value=("" if is_new else emp_data.get("vardas", "")))
+    # 2) Pavardė
+    cols1[1].text_input("Pavardė", key="pavarde", value=("" if is_new else emp_data.get("pavarde", "")))
+    # 3) Pareigybė – selectbox
     if is_new:
         default_pareigybe = pareigybes[0]
     else:
-        default_pareigybe = cli.get("pareigybe", pareigybes[0])
+        default_pareigybe = emp_data.get("pareigybe", pareigybes[0])
     selected_pareigybe = cols1[2].selectbox(
         "Pareigybė", pareigybes, key="pareigybe", index=pareigybes.index(default_pareigybe)
     )
-    # El. paštas
-    cols2[0].text_input("El. paštas", key="el_pastas", value=("" if is_new else cli.get("el_pastas", "")))
-    # Telefonas
-    cols2[1].text_input("Telefonas", key="telefonas", value=("" if is_new else cli.get("telefonas", "")))
-    # Grupė - dinaminis selectbox
-    if is_new:
-        default_grupe = grupes[selected_pareigybe][0]
+
+    # 4) El. paštas
+    cols2[0].text_input("El. paštas", key="el_pastas", value=("" if is_new else emp_data.get("el_pastas", "")))
+    # 5) Telefonas
+    cols2[1].text_input("Telefonas", key="telefonas", value=("" if is_new else emp_data.get("telefonas", "")))
+
+    # 6) Dinaminis grupių selectbox
+    if selected_pareigybe == "Ekspedicijos vadybininkas":
+        galimos_grupes = ekspedicijos_gr
     else:
-        default_grupe = cli.get("grupe", grupes[selected_pareigybe][0])
+        galimos_grupes = transporto_gr
+
+    if is_new:
+        default_grupe = galimos_grupes[0] if galimos_grupes else ""
+    else:
+        default_grupe = emp_data.get("grupe", galimos_grupes[0] if galimos_grupes else "")
+
     cols2[2].selectbox(
         "Grupė",
-        grupes[st.session_state["pareigybe"]],
+        galimos_grupes,
         key="grupe",
-        index=grupes[st.session_state["pareigybe"]].index(default_grupe) if default_grupe in grupes[st.session_state["pareigybe"]] else 0
+        index=galimos_grupes.index(default_grupe) if default_grupe in galimos_grupes else 0
     )
 
-    # Save / Back buttons
+    # Išsaugojimo ir „Grįžti“ mygtukai
     def do_save():
-        vals = [st.session_state[key] for _, key in fields]
+        fields = ["vardas", "pavarde", "pareigybe", "el_pastas", "telefonas", "grupe"]
+        vals = [st.session_state[key] for key in fields]
         if is_new:
-            cols_sql     = ", ".join(k for _, k in fields)
+            cols_sql     = ", ".join(fields)
             placeholders = ", ".join("?" for _ in fields)
             c.execute(
                 f"INSERT INTO darbuotojai ({cols_sql}) VALUES ({placeholders})",
@@ -126,7 +129,7 @@ def show(conn, c):
             )
         else:
             vals.append(sel)
-            set_clause = ", ".join(f"{k}=?" for _, k in fields)
+            set_clause = ", ".join(f"{k}=?" for k in fields)
             c.execute(
                 f"UPDATE darbuotojai SET {set_clause} WHERE id=?",
                 tuple(vals)

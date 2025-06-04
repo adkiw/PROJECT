@@ -24,29 +24,42 @@ def show(conn, c):
     """)
     conn.commit()
 
-    st.subheader("➕ Pridėti naują grupę")
-    with st.form("grupes_forma", clear_on_submit=True):
-        numeris = st.text_input("Grupės numeris (pvz., EKSP1 arba TR1)")
-        pavadinimas = st.text_input("Pavadinimas")
-        aprasymas = st.text_area("Aprašymas")
-        save_btn = st.form_submit_button("💾 Išsaugoti grupę")
+    # Mygtukas formos rodymui/uždarymui
+    if "show_add_form" not in st.session_state:
+        st.session_state["show_add_form"] = False
 
-        if save_btn:
-            if not numeris:
-                st.error("❌ Grupės numeris privalomas.")
-            else:
-                try:
-                    c.execute(
-                        "INSERT INTO grupes (numeris, pavadinimas, aprasymas) VALUES (?, ?, ?)",
-                        (numeris.strip().upper(), pavadinimas.strip(), aprasymas.strip())
-                    )
-                    conn.commit()
-                    st.success("✅ Grupė įrašyta.")
-                except Exception as e:
-                    st.error(f"❌ Klaida: {e}")
+    if st.button("➕ Pridėti grupę"):
+        st.session_state["show_add_form"] = True
+
+    if st.session_state["show_add_form"]:
+        st.subheader("➕ Naujos grupės forma")
+        with st.form("grupes_forma", clear_on_submit=True):
+            numeris = st.text_input("Grupės numeris (pvz., EKSP1 arba TR1)")
+            pavadinimas = st.text_input("Pavadinimas")
+            aprasymas = st.text_area("Aprašymas")
+            save_btn = st.form_submit_button("💾 Išsaugoti grupę")
+            cancel_btn = st.form_submit_button("🔙 Atšaukti")
+
+            if cancel_btn:
+                st.session_state["show_add_form"] = False
+
+            if save_btn:
+                if not numeris:
+                    st.error("❌ Grupės numeris privalomas.")
+                else:
+                    try:
+                        c.execute(
+                            "INSERT INTO grupes (numeris, pavadinimas, aprasymas) VALUES (?, ?, ?)",
+                            (numeris.strip().upper(), pavadinimas.strip(), aprasymas.strip())
+                        )
+                        conn.commit()
+                        st.success("✅ Grupė įrašyta.")
+                        st.session_state["show_add_form"] = False
+                    except Exception as e:
+                        st.error(f"❌ Klaida: {e}")
 
     st.markdown("---")
-    st.subheader("📋 Grupių sąrašas ir pasirinkimas")
+    st.subheader("📋 Grupių sąrašas")
 
     # Įkeliame visas grupes
     grupes_df = pd.read_sql_query("SELECT id, numeris, pavadinimas FROM grupes ORDER BY numeris", conn)
@@ -59,7 +72,7 @@ def show(conn, c):
     pasirinkta_grupe = st.selectbox("Pasirinkite grupę", pasirinkti)
 
     if not pasirinkta_grupe:
-        st.info("Pasirinkite grupę, kad pamatytumėte jos narius.")
+        st.info("Pasirinkite grupę, kad pamatytumėte jos informaciją.")
         return
 
     # Randame pasirinktos grupės ID
@@ -73,6 +86,7 @@ def show(conn, c):
     kodas = pasirinkta_grupe.upper()
     if kodas.startswith("TR"):
         st.subheader(f"🚚 Transporto grupė: {pasirinkta_grupe}")
+
         # Surandame vilkikus, priskirtus per transporto vadybininką, kurio „grupe = TRx“
         query = """
             SELECT v.numeris AS vilkiko_numeris,
@@ -119,33 +133,49 @@ def show(conn, c):
         else:
             st.write(", ".join(regionai_df["regiono_kodas"].tolist()))
 
-        # 3) Formos dalis naujam regionui pridėti
-        with st.form("prideti_regiona", clear_on_submit=True):
-            naujas_regionas = st.text_input(
-                "Įveskite regiono kodą (pvz., FR10)", max_chars=5
-            )
-            prideti_btn = st.form_submit_button("➕ Pridėti regioną")
-            if prideti_btn:
-                kodas_val = naujas_regionas.strip().upper()
-                if not kodas_val:
-                    st.error("❌ Įveskite regiono kodą.")
-                else:
-                    exists = c.execute(
-                        "SELECT 1 FROM grupiu_regionai WHERE grupe_id = ? AND regiono_kodas = ?",
-                        (grupe_id, kodas_val)
-                    ).fetchone()
-                    if exists:
-                        st.warning(f"⚠️ Regionas „{kodas_val}“ jau priskirtas šiai grupei.")
-                    else:
-                        try:
-                            c.execute(
-                                "INSERT INTO grupiu_regionai (grupe_id, regiono_kodas) VALUES (?, ?)",
-                                (grupe_id, kodas_val)
-                            )
-                            conn.commit()
-                            st.success(f"✅ Regionas „{kodas_val}“ pridėtas.")
-                        except Exception as e:
-                            st.error(f"❌ Klaida pridedant regioną: {e}")
+        # 3) Forma naujiems regionams pridėti (vienu metu keli regionai)
+        with st.form("prideti_regionus", clear_on_submit=True):
+            st.write("Įveskite regionų kodus semikolonais atskirtus (pvz.: FR10;FR20;IT05)")
+            regionu_input = st.text_area("Regionų sąrašas", max_chars=100)
+            prideti_btn = st.form_submit_button("➕ Pridėti regionus")
 
+            if prideti_btn:
+                if not regionu_input.strip():
+                    st.error("❌ Įveskite bent vieną regiono kodą.")
+                else:
+                    # Palaikomi regionų kodai atskirti kabliataškiu
+                    įvesti_regionai = [r.strip().upper() for r in regionu_input.split(";") if r.strip()]
+                    if not įvesti_regionai:
+                        st.error("❌ Nepavyko atpažinti jokių regionų kodų.")
+                    else:
+                        pridėta = []
+                        jau_egzistuojantys = []
+                        klaidos = []
+                        for kodas_val in įvesti_regionai:
+                            # Patikriname, ar toks regionas jau yra
+                            exists = c.execute(
+                                "SELECT 1 FROM grupiu_regionai WHERE grupe_id = ? AND regiono_kodas = ?",
+                                (grupe_id, kodas_val)
+                            ).fetchone()
+                            if exists:
+                                jau_egzistuojantys.append(kodas_val)
+                            else:
+                                try:
+                                    c.execute(
+                                        "INSERT INTO grupiu_regionai (grupe_id, regiono_kodas) VALUES (?, ?)",
+                                        (grupe_id, kodas_val)
+                                    )
+                                    conn.commit()
+                                    pridėta.append(kodas_val)
+                                except Exception as e:
+                                    klaidos.append((kodas_val, str(e)))
+
+                        if pridėta:
+                            st.success(f"✅ Pridėti regionai: {', '.join(pridėta)}.")
+                        if jau_egzistuojantys:
+                            st.warning(f"⚠️ Šie regionai jau buvo priskirti: {', '.join(jau_egzistuojantys)}.")
+                        if klaidos:
+                            msg = "; ".join([f"{k}: {e}" for k, e in klaidos])
+                            st.error(f"❌ Klaidos įterpiant: {msg}")
     else:
         st.warning("Pasirinkta grupė nepriskirta nei TR, nei EKSP tipo kriterijams.")

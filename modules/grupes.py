@@ -1,10 +1,12 @@
+# modules/grupes.py
+
 import streamlit as st
 import pandas as pd
 
 def show(conn, c):
     st.title("DISPO – Grupės")
 
-    # Užtikrinti, kad egzistuotų lentelė „grupes“
+    # 1) Užtikrinti, kad egzistuotų lentelė „grupes“
     c.execute("""
         CREATE TABLE IF NOT EXISTS grupes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -13,7 +15,7 @@ def show(conn, c):
             aprasymas TEXT
         )
     """)
-    # Užtikrinti, kad egzistuotų lentelė „grupiu_regionai“
+    # 2) Užtikrinti, kad egzistuotų lentelė „grupiu_regionai“
     c.execute("""
         CREATE TABLE IF NOT EXISTS grupiu_regionai (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -24,21 +26,34 @@ def show(conn, c):
     """)
     conn.commit()
 
-    # Mygtukas formos rodymui/uždarymui
+    # 3) Automatiškai sukurti numatytąsias grupes (EKSP1–EKSP5, TR1–TR5), jei jų dar nėra
+    default_eksp = [f"EKSP{i}" for i in range(1, 6)]
+    default_tr   = [f"TR{i}"   for i in range(1, 6)]
+    for kod in default_eksp + default_tr:
+        c.execute("SELECT 1 FROM grupes WHERE numeris = ?", (kod,))
+        if not c.fetchone():
+            c.execute(
+                "INSERT INTO grupes (numeris, pavadinimas, aprasymas) VALUES (?, ?, ?)",
+                (kod, kod, "")
+            )
+    conn.commit()
+
+    # 4) Mygtukas formos rodymui/uždarymui
     if "show_add_form" not in st.session_state:
         st.session_state["show_add_form"] = False
 
     if st.button("➕ Pridėti grupę"):
         st.session_state["show_add_form"] = True
 
+    # 5) Jei paspausta „Pridėti grupę“, atvaizduoti formą
     if st.session_state["show_add_form"]:
         st.subheader("➕ Naujos grupės forma")
         with st.form("grupes_forma", clear_on_submit=True):
-            numeris = st.text_input("Grupės numeris (pvz., EKSP1 arba TR1)")
+            numeris    = st.text_input("Grupės numeris (pvz., EKSP6 arba TR6)")
             pavadinimas = st.text_input("Pavadinimas")
-            aprasymas = st.text_area("Aprašymas")
-            save_btn = st.form_submit_button("💾 Išsaugoti grupę")
-            cancel_btn = st.form_submit_button("🔙 Atšaukti")
+            aprasymas   = st.text_area("Aprašymas")
+            save_btn    = st.form_submit_button("💾 Išsaugoti grupę")
+            cancel_btn  = st.form_submit_button("🔙 Atšaukti")
 
             if cancel_btn:
                 st.session_state["show_add_form"] = False
@@ -47,13 +62,14 @@ def show(conn, c):
                 if not numeris:
                     st.error("❌ Grupės numeris privalomas.")
                 else:
+                    kodas = numeris.strip().upper()
                     try:
                         c.execute(
                             "INSERT INTO grupes (numeris, pavadinimas, aprasymas) VALUES (?, ?, ?)",
-                            (numeris.strip().upper(), pavadinimas.strip(), aprasymas.strip())
+                            (kodas, pavadinimas.strip(), aprasymas.strip())
                         )
                         conn.commit()
-                        st.success("✅ Grupė įrašyta.")
+                        st.success(f"✅ Grupė „{kodas}“ įrašyta.")
                         st.session_state["show_add_form"] = False
                     except Exception as e:
                         st.error(f"❌ Klaida: {e}")
@@ -61,13 +77,13 @@ def show(conn, c):
     st.markdown("---")
     st.subheader("📋 Grupių sąrašas")
 
-    # Įkeliame visas grupes
+    # 6) Visų grupių sąrašas (atidaryti visada)
     grupes_df = pd.read_sql_query("SELECT id, numeris, pavadinimas FROM grupes ORDER BY numeris", conn)
     if grupes_df.empty:
         st.info("Kol kas nėra jokių grupių.")
         return
 
-    # Dropdown pasirinkti grupę
+    # 7) Dropdown pasirinkti grupę
     pasirinkti = [""] + grupes_df["numeris"].tolist()
     pasirinkta_grupe = st.selectbox("Pasirinkite grupę", pasirinkti)
 
@@ -75,19 +91,18 @@ def show(conn, c):
         st.info("Pasirinkite grupę, kad pamatytumėte jos informaciją.")
         return
 
-    # Randame pasirinktos grupės ID
+    # 8) Randame pasirinktos grupės ID
     grupe_row = grupes_df[grupes_df["numeris"] == pasirinkta_grupe]
     if grupe_row.empty:
         st.error("Pasirinkta grupė nerasta duomenų bazėje.")
         return
     grupe_id = int(grupe_row["id"].iloc[0])
 
-    # Patikriname, ar tai transporto, ar ekspedicijos grupė
+    # 9) Nustatome grupės tipą pagal prefiksą
     kodas = pasirinkta_grupe.upper()
     if kodas.startswith("TR"):
         st.subheader(f"🚚 Transporto grupė: {pasirinkta_grupe}")
 
-        # Surandame vilkikus, priskirtus per transporto vadybininką, kurio „grupe = TRx“
         query = """
             SELECT v.numeris AS vilkiko_numeris,
                    v.priekaba,
@@ -107,7 +122,7 @@ def show(conn, c):
     elif kodas.startswith("EKSP"):
         st.subheader(f"📦 Ekspedicijos grupė: {pasirinkta_grupe}")
 
-        # 1) Rodyti priskirtus darbuotojus
+        # 10a) Rodyti priskirtus darbuotojus
         st.markdown("**👥 Priskirti darbuotojai:**")
         darb_query = """
             SELECT vardas, pavarde, pareigybe
@@ -121,7 +136,7 @@ def show(conn, c):
         else:
             st.dataframe(darbuotojai)
 
-        # 2) Rodyti įvestus regionus
+        # 10b) Rodyti įvestus regionus
         st.markdown("**🌍 Aptarnaujami regionai:**")
         regionai_df = pd.read_sql_query(
             "SELECT regiono_kodas FROM grupiu_regionai WHERE grupe_id = ? ORDER BY regiono_kodas",
@@ -133,7 +148,7 @@ def show(conn, c):
         else:
             st.write(", ".join(regionai_df["regiono_kodas"].tolist()))
 
-        # 3) Forma naujiems regionams pridėti (vienu metu keli regionai)
+        # 10c) Forma naujiems regionams pridėti (keli vienu kartu)
         with st.form("prideti_regionus", clear_on_submit=True):
             st.write("Įveskite regionų kodus semikolonais atskirtus (pvz.: FR10;FR20;IT05)")
             regionu_input = st.text_area("Regionų sąrašas", max_chars=100)
@@ -143,7 +158,6 @@ def show(conn, c):
                 if not regionu_input.strip():
                     st.error("❌ Įveskite bent vieną regiono kodą.")
                 else:
-                    # Palaikomi regionų kodai atskirti kabliataškiu
                     įvesti_regionai = [r.strip().upper() for r in regionu_input.split(";") if r.strip()]
                     if not įvesti_regionai:
                         st.error("❌ Nepavyko atpažinti jokių regionų kodų.")
@@ -152,7 +166,6 @@ def show(conn, c):
                         jau_egzistuojantys = []
                         klaidos = []
                         for kodas_val in įvesti_regionai:
-                            # Patikriname, ar toks regionas jau yra
                             exists = c.execute(
                                 "SELECT 1 FROM grupiu_regionai WHERE grupe_id = ? AND regiono_kodas = ?",
                                 (grupe_id, kodas_val)

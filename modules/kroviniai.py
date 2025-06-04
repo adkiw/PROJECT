@@ -376,7 +376,7 @@ def show(conn, c):
             st.error("Privalomi laukai: Klientas ir Užsakymo nr.")
             return
         else:
-            # Retrieve VAT of selected klientas
+            # Retrieve VAT and COFACE of selected klientas
             vat_row = c.execute(
                 "SELECT vat_numeris, coface_limitas FROM klientai WHERE pavadinimas = ?",
                 (klientas,)
@@ -386,17 +386,23 @@ def show(conn, c):
                 return
             vat_of_client, coface_of_client = vat_row
 
-            # Compute musus limit and current unpaid sum
+            # Compute musu_limit and current unpaid sum for this VAT
             musu_limitas = coface_of_client / 3.0
-            r = c.execute("""
-                SELECT SUM(frachtas) 
-                FROM kroviniai 
-                WHERE klientas IN (
-                    SELECT pavadinimas FROM klientai WHERE vat_numeris = ?
-                )
-                  AND saskaitos_busena != 'Apmokėta'
-            """, (vat_of_client,)).fetchone()
-            unpaid_sum = r[0] if r and r[0] is not None else 0.0
+            unpaid_sum = 0.0
+            # Sum unpaid frachtai across all entries for this VAT
+            try:
+                r = c.execute("""
+                    SELECT SUM(k.frachtas)
+                    FROM kroviniai AS k
+                    JOIN klientai AS cl ON k.klientas = cl.pavadinimas
+                    WHERE cl.vat_numeris = ?
+                      AND k.saskaitos_busena != 'Apmokėta'
+                """, (vat_of_client,)).fetchone()
+                if r and r[0] is not None:
+                    unpaid_sum = r[0]
+            except:
+                unpaid_sum = 0.0
+
             current_limit = musu_limitas - unpaid_sum
             if current_limit < 0:
                 current_limit = 0.0
@@ -445,15 +451,21 @@ def show(conn, c):
                     c.execute(q, tuple(vals.values()) + (sel,))
                 conn.commit()
 
-                # After inserting/updating, recalculate and update likes_limitas in 'klientai' for all clients with same VAT
-                r2 = c.execute("""
-                    SELECT SUM(k.frachtas) 
-                    FROM kroviniai AS k
-                    JOIN klientai AS cl ON k.klientas = cl.pavadinimas
-                    WHERE cl.vat_numeris = ? 
-                      AND k.saskaitos_busena != 'Apmokėta'
-                """, (vat_of_client,)).fetchone()
-                unpaid_total = r2[0] if r2 and r2[0] is not None else 0.0
+                # After saving cargo, recalc and update limits for all clients with same VAT
+                unpaid_total = 0.0
+                try:
+                    r2 = c.execute("""
+                        SELECT SUM(k.frachtas)
+                        FROM kroviniai AS k
+                        JOIN klientai AS cl ON k.klientas = cl.pavadinimas
+                        WHERE cl.vat_numeris = ?
+                          AND k.saskaitos_busena != 'Apmokėta'
+                    """, (vat_of_client,)).fetchone()
+                    if r2 and r2[0] is not None:
+                        unpaid_total = r2[0]
+                except:
+                    unpaid_total = 0.0
+
                 new_musu = coface_of_client / 3.0
                 new_liks = new_musu - unpaid_total
                 if new_liks < 0:
